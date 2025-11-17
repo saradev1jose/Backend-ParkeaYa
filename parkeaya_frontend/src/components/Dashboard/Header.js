@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './Header.css';
+import API_BASE from '../../config';
 
 function Header({ user, onToggleSidebar, onLogout, stats }) {
   const [notifications, setNotifications] = useState([]);
@@ -7,14 +8,12 @@ function Header({ user, onToggleSidebar, onLogout, stats }) {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
 
-  const API_BASE = 'http://localhost:8000/api';
-
-  const getAuthHeaders = () => {
+  const getAuthHeaders = (includeJson = true) => {
     const token = localStorage.getItem('access_token');
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
-    };
+    const headers = {};
+    if (includeJson) headers['Content-Type'] = 'application/json';
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return headers;
   };
 
   useEffect(() => {
@@ -28,8 +27,15 @@ function Header({ user, onToggleSidebar, onLogout, stats }) {
       setLoading(true);
       const response = await fetch(`${API_BASE}/notifications/`, {
         method: 'GET',
-        headers: getAuthHeaders()
+        headers: getAuthHeaders(false)
       });
+
+      if (response.status === 401 || response.status === 403) {
+        // Token inválido o sin permisos: forzar logout si se pasó la función
+        if (typeof onLogout === 'function') onLogout();
+        setLoading(false);
+        return;
+      }
 
       if (response.ok) {
         const data = await response.json();

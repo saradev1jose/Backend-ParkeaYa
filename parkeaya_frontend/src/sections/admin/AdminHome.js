@@ -109,10 +109,6 @@ const AdminHome = ({ stats, userRole }) => {
         <div className="header-content">
           <h1>Panel de Control Administrativo</h1>
           <p>Gestión global de la plataforma Parkeaya</p>
-          <div className="last-update">
-            <i className="fas fa-sync-alt"></i>
-            Actualizado hace 5 min
-          </div>
         </div>
         <div className="header-actions">
           <select 
