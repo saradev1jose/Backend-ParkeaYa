@@ -257,3 +257,17 @@ class ParkingApprovalRequest(models.Model):
         if self.status == 'PENDING':
             return (timezone.now() - self.fecha_solicitud).days
         return 0
+
+
+class ParkingApprovalImage(models.Model):
+    """Imágenes asociadas a una solicitud de aprobación de estacionamiento.
+    Se almacenan aquí hasta que la solicitud sea aceptada, momento en el que
+    las imágenes pueden copiarse al `ParkingImage` del `ParkingLot` creado.
+    """
+    solicitud = models.ForeignKey(ParkingApprovalRequest, on_delete=models.CASCADE, related_name='imagenes_solicitud')
+    imagen = models.ImageField(upload_to='parking_approval_images/')
+    descripcion = models.CharField(max_length=100, blank=True)
+    creado_en = models.DateTimeField(auto_now_add=True, null=True, blank=True)
+
+    def __str__(self):
+        return f"Imagen de solicitud {self.solicitud.id} - {self.solicitud.nombre}"

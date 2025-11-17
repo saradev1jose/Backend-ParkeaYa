@@ -465,44 +465,9 @@ const OwnerHome = ({ userRole }) => {
               </div>
             </div>
 
-            {/* CONTACTOS DE EMERGENCIA */}
-            <div className="emergency-card">
-              <h3>Contactos de Emergencia</h3>
-              <div className="emergency-contacts">
-                <div className="contact-item">
-                  <i className="fas fa-phone"></i>
-                  <div>
-                    <strong>Soporte Parkeaya</strong>
-                    <span>+57 1 800 123 4567</span>
-                  </div>
-                </div>
-                <div className="contact-item">
-                  <i className="fas fa-shield-alt"></i>
-                  <div>
-                    <strong>Seguridad</strong>
-                    <span>+57 123 456 7890</span>
-                  </div>
-                </div>
-                <div className="contact-item">
-                  <i className="fas fa-tools"></i>
-                  <div>
-                    <strong>Mantenimiento</strong>
-                    <span>+57 987 654 3210</span>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
-
-      {/* DEBUG INFO */}
-      {error && (
-        <div className="error-message">
-          <i className="fas fa-exclamation-triangle"></i>
-          {error}
-        </div>
-      )}
     </div>
   );
 };

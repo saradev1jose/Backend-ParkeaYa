@@ -8,6 +8,9 @@ const OwnerProfile = () => {
   const [activeTab, setActiveTab] = useState('info');
   const [editing, setEditing] = useState(false);
   const [showParkingForm, setShowParkingForm] = useState(false);
+  const [showPasswordChange, setShowPasswordChange] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ old_password: '', new_password: '', confirm_password: '' });
+  const [changingPassword, setChangingPassword] = useState(false);
   const [formData, setFormData] = useState({});
   const [parkingForm, setParkingForm] = useState({
     nombre: '',
@@ -21,7 +24,8 @@ const OwnerProfile = () => {
     tarifa_hora: '',
     total_plazas: '',
     plazas_disponibles: '',
-    servicios: []
+    servicios: [],
+    imagenes: []
   });
 
   const API_BASE = 'http://localhost:8000/api';
@@ -162,28 +166,37 @@ const OwnerProfile = () => {
     e.preventDefault();
     try {
       // Preparar datos para la API
-      const parkingDataToSend = {
-        nombre: parkingForm.nombre,
-        direccion: parkingForm.direccion,
-        coordenadas: parkingForm.coordenadas || '',
-        telefono: parkingForm.telefono,
-        descripcion: parkingForm.descripcion || '',
-        horario_apertura: parkingForm.horario_apertura || null,
-        horario_cierre: parkingForm.horario_cierre || null,
-        nivel_seguridad: parkingForm.nivel_seguridad,
-        tarifa_hora: parseFloat(parkingForm.tarifa_hora),
-        total_plazas: parseInt(parkingForm.total_plazas),
-        plazas_disponibles: parseInt(parkingForm.plazas_disponibles),
-        servicios: parkingForm.servicios,
-        panel_local_id: `owner_${ownerData?.id}_${Date.now()}`
-      };
 
-      console.log('📤 Enviando datos del estacionamiento:', parkingDataToSend);
+      // Usar FormData para permitir subir imágenes
+      const formData = new FormData();
+      formData.append('nombre', parkingForm.nombre);
+      formData.append('direccion', parkingForm.direccion);
+      formData.append('coordenadas', parkingForm.coordenadas || '');
+      formData.append('telefono', parkingForm.telefono || '');
+      formData.append('descripcion', parkingForm.descripcion || '');
+      if (parkingForm.horario_apertura) formData.append('horario_apertura', parkingForm.horario_apertura);
+      if (parkingForm.horario_cierre) formData.append('horario_cierre', parkingForm.horario_cierre);
+      formData.append('nivel_seguridad', parkingForm.nivel_seguridad);
+      formData.append('tarifa_hora', parkingForm.tarifa_hora);
+      formData.append('total_plazas', parkingForm.total_plazas);
+      formData.append('plazas_disponibles', parkingForm.plazas_disponibles);
+      formData.append('servicios', JSON.stringify(parkingForm.servicios || []));
+      formData.append('panel_local_id', `owner_${ownerData?.id}_${Date.now()}`);
 
+      // Adjuntar imágenes (campo 'imagenes')
+      if (parkingForm.imagenes && parkingForm.imagenes.length > 0) {
+        parkingForm.imagenes.forEach((file, idx) => {
+          formData.append('imagenes', file);
+        });
+      }
+
+      console.log('📤 Enviando datos del estacionamiento (multipart):', parkingForm);
+
+      const token = localStorage.getItem('access_token');
       const response = await fetch(`${API_BASE}/parking/approval/requests/`, {
         method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify(parkingDataToSend)
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+        body: formData
       });
 
       if (response.ok) {
@@ -219,7 +232,8 @@ const OwnerProfile = () => {
       tarifa_hora: '',
       total_plazas: '',
       plazas_disponibles: '',
-      servicios: []
+      servicios: [],
+      imagenes: []
     });
   };
 
@@ -248,6 +262,14 @@ const OwnerProfile = () => {
           ? [...prev.servicios, value]
           : prev.servicios.filter(service => service !== value)
       }));
+      return;
+    }
+
+    if (type === 'file') {
+      // multiple files
+      const files = Array.from(e.target.files || []);
+      setParkingForm(prev => ({ ...prev, imagenes: files }));
+      return;
     } else {
       setParkingForm(prev => ({
         ...prev,
@@ -321,6 +343,54 @@ const OwnerProfile = () => {
       ...prev,
       [name]: value
     }));
+  };
+
+  const handlePasswordInputChange = (e) => {
+    const { name, value } = e.target;
+    setPasswordForm(prev => ({ ...prev, [name]: value }));
+  };
+
+  const submitChangePassword = async (e) => {
+    e && e.preventDefault && e.preventDefault();
+    if (changingPassword) return;
+
+    const { old_password, new_password, confirm_password } = passwordForm;
+    if (!old_password || !new_password) {
+      showNotification('Completa las contraseñas requeridas', 'error');
+      return;
+    }
+    if (new_password !== confirm_password) {
+      showNotification('La nueva contraseña y la confirmación no coinciden', 'error');
+      return;
+    }
+    if (new_password.length < 6) {
+      showNotification('La nueva contraseña debe tener al menos 6 caracteres', 'error');
+      return;
+    }
+
+    try {
+      setChangingPassword(true);
+      const response = await fetch(`${API_BASE}/users/profile/change-password/`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ old_password, new_password, confirm_password })
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (response.ok) {
+        showNotification(data.message || 'Contraseña cambiada correctamente', 'success');
+        setPasswordForm({ old_password: '', new_password: '', confirm_password: '' });
+        setShowPasswordChange(false);
+      } else {
+        const err = data.error || data.detail || JSON.stringify(data) || 'Error cambiando contraseña';
+        showNotification(err, 'error');
+      }
+    } catch (error) {
+      console.error('Error cambiando contraseña:', error);
+      showNotification('Error cambiando contraseña', 'error');
+    } finally {
+      setChangingPassword(false);
+    }
   };
 
   if (loading) {
@@ -701,6 +771,21 @@ const OwnerProfile = () => {
                             placeholder="Ej: 40.7128, -74.0060"
                           />
                         </div>
+
+                        <div className="form-group">
+                          <label>
+                            <i className="fas fa-image"></i>
+                            Imágenes del estacionamiento (opcional)
+                          </label>
+                          <input
+                            type="file"
+                            name="imagenes"
+                            accept="image/*"
+                            multiple
+                            onChange={handleParkingInputChange}
+                          />
+                          <small className="form-help">Puedes subir varias imágenes (JPG, PNG). Tamaño recomendado &lt; 5MB por imagen.</small>
+                        </div>
                         
                         <div className="form-group">
                           <label>
@@ -987,10 +1072,49 @@ const OwnerProfile = () => {
                 <div className="security-content">
                   <h3>Cambiar Contraseña</h3>
                   <p>Actualiza tu contraseña regularmente para mantener tu cuenta segura</p>
-                  <button className="security-btn primary">
-                    <i className="fas fa-sync-alt"></i>
-                    Cambiar Contraseña
-                  </button>
+                      {!showPasswordChange ? (
+                        <button className="security-btn primary" onClick={() => setShowPasswordChange(true)}>
+                          <i className="fas fa-sync-alt"></i>
+                          Cambiar Contraseña
+                        </button>
+                      ) : (
+                        <form className="password-change-form" onSubmit={submitChangePassword}>
+                          <div className="form-group">
+                            <label>Contraseña actual</label>
+                            <input
+                              type="password"
+                              name="old_password"
+                              value={passwordForm.old_password}
+                              onChange={handlePasswordInputChange}
+                              required
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label>Nueva contraseña</label>
+                            <input
+                              type="password"
+                              name="new_password"
+                              value={passwordForm.new_password}
+                              onChange={handlePasswordInputChange}
+                              required
+                            />
+                          </div>
+                          <div className="form-group">
+                            <label>Confirmar nueva contraseña</label>
+                            <input
+                              type="password"
+                              name="confirm_password"
+                              value={passwordForm.confirm_password}
+                              onChange={handlePasswordInputChange}
+                              required
+                            />
+                          </div>
+                          <div className="form-actions">
+                            <button type="button" className="cancel-btn" onClick={() => setShowPasswordChange(false)}>Cancelar</button>
+                            <button type="submit" className="save-btn" disabled={changingPassword}>{changingPassword ? 'Guardando...' : 'Guardar'}</button>
+                          </div>
+                        </form>
+                      )}
                 </div>
               </div>
               

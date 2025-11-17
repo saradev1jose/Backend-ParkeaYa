@@ -6,12 +6,16 @@ const AdminUsers = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [filters, setFilters] = useState({
-    role: 'all',
+    rol: 'all',
     status: 'all',
     search: ''
   });
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [actionLoading, setActionLoading] = useState(null);
+  const [showParkingModal, setShowParkingModal] = useState(false);
+  const [parkingList, setParkingList] = useState([]);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [createForm, setCreateForm] = useState({ username: '', email: '', password: '', rol: 'client' });
 
   const API_BASE = 'http://localhost:8000/api';
 
@@ -42,7 +46,7 @@ const AdminUsers = () => {
 
   // Filtrar usuarios según los filtros aplicados
   const filteredUsers = users.filter(user => {
-    const matchesRole = filters.rol=== 'all' || user.rol=== filters.rol || user.user_type === filters.rol;
+    const matchesRole = filters.rol === 'all' || user.rol === filters.rol || user.user_type === filters.rol || user.role === filters.rol;
     const matchesStatus = filters.status === 'all' || 
       (filters.status === 'active' && user.is_active) ||
       (filters.status === 'inactive' && !user.is_active) ||
@@ -86,7 +90,8 @@ const AdminUsers = () => {
       // Endpoint para obtener todos los usuarios (admin)
       const response = await fetch(`${API_BASE}/users/admin/users/`, {
         method: 'GET',
-        headers
+        headers,
+        credentials: 'include'
       });
 
       console.log('📊 Response status usuarios:', response.status);
@@ -121,6 +126,56 @@ const AdminUsers = () => {
     }
   }, [API_BASE]);
 
+  const fetchUserParkings = async (userId) => {
+    try {
+      setParkingList([]);
+      setShowParkingModal(true);
+      const res = await fetch(`${API_BASE}/parking/parkings/?dueno=${userId}`, {
+        method: 'GET',
+        headers: getAuthHeaders(),
+        credentials: 'include'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        // try results or array
+        const parks = data.results || data || [];
+        setParkingList(parks);
+      } else {
+        setParkingList([]);
+      }
+    } catch (err) {
+      console.error('Error fetching parkings for user', err);
+      setParkingList([]);
+    }
+  };
+
+  const handleCreateUser = async () => {
+    try {
+      setActionLoading('create');
+      const res = await fetch(`${API_BASE}/users/admin/users/`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        credentials: 'include',
+        body: JSON.stringify(createForm)
+      });
+      if (res.ok) {
+        alert('Usuario creado');
+        setShowCreateModal(false);
+        setCreateForm({ username: '', email: '', password: '', rol: 'client' });
+        await loadUsers();
+      } else {
+        let err = '';
+        try { err = JSON.stringify(await res.json()); } catch(e) { err = await res.text(); }
+        alert('Error creando usuario: ' + err);
+      }
+    } catch (err) {
+      console.error('Error creando usuario', err);
+      alert('Error creando usuario');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   // Cargar usuarios inicialmente y cuando cambian filtros
   useEffect(() => {
     loadUsers();
@@ -129,38 +184,44 @@ const AdminUsers = () => {
   const handleUserAction = async (userId, action) => {
     try {
       setActionLoading(userId);
-      
-      let endpoint = '';
-      let method = 'POST';
-      
+      // Mapear acciones a PATCH sobre el recurso de usuario (AdminUserViewSet soporta PATCH/PUT)
+      const endpoint = `${API_BASE}/users/admin/users/${userId}/`;
+      let body = {};
+
       switch(action) {
         case 'approve':
-          endpoint = `${API_BASE}/users/admin/users/${userId}/approve/`;
+          // Marcar como activo/aprobado
+          body = { is_active: true, activo: true };
           break;
         case 'reject':
-          endpoint = `${API_BASE}/users/admin/users/${userId}/reject/`;
+          // Desactivar (rechazar registro)
+          body = { is_active: false, activo: false };
           break;
         case 'activate':
-          endpoint = `${API_BASE}/users/admin/users/${userId}/activate/`;
+          body = { is_active: true, activo: true };
           break;
         case 'deactivate':
-          endpoint = `${API_BASE}/users/admin/users/${userId}/deactivate/`;
+          body = { is_active: false, activo: false };
           break;
         default:
+          setActionLoading(null);
           return;
       }
-      
+
       const response = await fetch(endpoint, {
-        method: method,
-        headers: getAuthHeaders()
+        method: 'PATCH',
+        headers: getAuthHeaders(),
+        credentials: 'include',
+        body: JSON.stringify(body)
       });
-      
+
       if (response.ok) {
-        // Recargar la lista de usuarios
         await loadUsers();
         setSelectedUsers([]);
       } else {
-        alert(`Error al ${action} usuario`);
+        let errText = '';
+        try { errText = JSON.stringify(await response.json()); } catch(e) { errText = await response.text(); }
+        alert(`Error al ${action} usuario: ${response.status} ${errText}`);
       }
     } catch (error) {
       console.error(`Error en acción ${action}:`, error);
@@ -181,13 +242,14 @@ const AdminUsers = () => {
       
       
       console.log(`Acción ${action} para usuarios:`, selectedUsers);
-      
-      // Simulamos éxito
-      setTimeout(() => {
-        alert(`${action} aplicado a ${selectedUsers.length} usuarios`);
-        setSelectedUsers([]);
-        setActionLoading(null);
-      }, 1000);
+
+      // Ejecutar PATCH por cada usuario (no hay endpoint bulk en backend actualmente)
+      for (const uid of selectedUsers) {
+        await handleUserAction(uid, action);
+      }
+      alert(`${action} aplicado a ${selectedUsers.length} usuarios`);
+      setSelectedUsers([]);
+      setActionLoading(null);
     } catch (error) {
       console.error('Error en acción masiva:', error);
       setActionLoading(null);
@@ -202,10 +264,16 @@ const AdminUsers = () => {
           <h1>Gestión de Usuarios</h1>
           <p>Administra todos los usuarios de la plataforma</p>
         </div>
-        <button onClick={loadUsers} className="refresh-btn">
+        <div className="header-actions">
+          <button onClick={() => setShowCreateModal(true)} className="btn-create">
+            <i className="fas fa-user-plus"></i>
+            Crear un usuario
+          </button>
+          <button onClick={loadUsers} className="refresh-btn">
           <i className="fas fa-sync"></i>
           Actualizar
-        </button>
+          </button>
+        </div>
       </div>
 
       {/*  RESUMEN ESTADÍSTICAS */}
@@ -224,7 +292,7 @@ const AdminUsers = () => {
         </div>
         <div className="stat-card">
           <div className="stat-value">
-            {users.filter(u => u.role === 'owner' && u.document_status === 'pending').length}
+            {users.filter(u => (u.rol === 'owner' || u.role === 'owner') && u.document_status === 'pending').length}
           </div>
           <div className="stat-label">Pendientes Aprobación</div>
         </div>
@@ -357,21 +425,26 @@ const AdminUsers = () => {
                   <td>
                     <div className="user-actions">
                       {/* Acciones para owners pendientes */}
-                      {user.role === 'owner' && user.document_status === 'pending' && (
+                      {user.rol === 'owner' && user.document_status === 'pending' && (
                         <>
                           <button 
-                            className="btn-approve"
+                            className="action-btn btn-approve"
                             onClick={() => handleUserAction(user.id, 'approve')}
                             disabled={actionLoading === user.id}
                           >
                             {actionLoading === user.id ? '...' : 'Aprobar'}
                           </button>
                           <button 
-                            className="btn-reject"
+                            className="action-btn btn-reject"
                             onClick={() => handleUserAction(user.id, 'reject')}
                             disabled={actionLoading === user.id}
                           >
                             {actionLoading === user.id ? '...' : 'Rechazar'}
+                          </button>
+                          <button
+                            className="action-btn btn-view-parks"
+                            onClick={() => fetchUserParkings(user.id)}
+                          >Ver Parkings
                           </button>
                         </>
                       )}
@@ -379,7 +452,7 @@ const AdminUsers = () => {
                       {/* Acciones de activación/desactivación */}
                       {user.is_active ? (
                         <button 
-                          className="btn-deactivate"
+                          className="action-btn btn-deactivate"
                           onClick={() => handleUserAction(user.id, 'deactivate')}
                           disabled={actionLoading === user.id}
                         >
@@ -387,7 +460,7 @@ const AdminUsers = () => {
                         </button>
                       ) : (
                         <button 
-                          className="btn-activate"
+                            className="action-btn btn-activate"
                           onClick={() => handleUserAction(user.id, 'activate')}
                           disabled={actionLoading === user.id}
                         >
@@ -405,6 +478,60 @@ const AdminUsers = () => {
             })}
           </tbody>
         </table>
+
+        {/* Modal: Parkings del usuario */}
+        {showParkingModal && (
+          <div className="modal-overlay" onClick={() => setShowParkingModal(false)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <h3>Parkings del Usuario</h3>
+              <button className="modal-close" onClick={() => setShowParkingModal(false)}>Cerrar</button>
+              <div className="modal-content">
+                {parkingList.length === 0 ? (
+                  <p>No se encontraron parkings para este usuario.</p>
+                ) : (
+                  <ul className="parking-list">
+                    {parkingList.map(p => (
+                      <li key={p.id} className="parking-item">
+                        <strong>{p.nombre}</strong>
+                        <div>{p.direccion}</div>
+                        <div>Tarifa: S/ {p.tarifa_hora}</div>
+                        <div>Plazas: {p.plazas_disponibles}/{p.total_plazas}</div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Crear usuario */}
+        {showCreateModal && (
+          <div className="modal-overlay" onClick={() => setShowCreateModal(false)}>
+            <div className="modal" onClick={(e) => e.stopPropagation()}>
+              <h3>Crear Usuario</h3>
+              <button className="modal-close" onClick={() => setShowCreateModal(false)}>Cerrar</button>
+              <div className="modal-content create-user-form">
+                <label>Username</label>
+                <input value={createForm.username} onChange={(e) => setCreateForm(prev => ({...prev, username: e.target.value}))} />
+                <label>Email</label>
+                <input value={createForm.email} onChange={(e) => setCreateForm(prev => ({...prev, email: e.target.value}))} />
+                <label>Password</label>
+                <input type="password" value={createForm.password} onChange={(e) => setCreateForm(prev => ({...prev, password: e.target.value}))} />
+                <label>Rol</label>
+                <select value={createForm.rol} onChange={(e) => setCreateForm(prev => ({...prev, rol: e.target.value}))}>
+                  <option value="client">Cliente</option>
+                  <option value="owner">Propietario</option>
+                  <option value="admin">Administrador</option>
+                </select>
+                <div className="create-actions">
+                  <button className="btn-primary" onClick={handleCreateUser} disabled={actionLoading === 'create'}>{actionLoading === 'create' ? 'Creando...' : 'Crear'}</button>
+                  <button className="btn-secondary" onClick={() => setShowCreateModal(false)}>Cancelar</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {filteredUsers.length === 0 && (
           <div className="no-users">

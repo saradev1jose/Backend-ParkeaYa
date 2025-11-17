@@ -45,6 +45,11 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = "admi@gmail.com"
 EMAIL_HOST_PASSWORD = "admi1234"
 
+NOTIFICATIONS = {
+    'DEFAULT_ICON': 'fas fa-bell',
+    'AUTO_MARK_READ_ON_CLICK': True,
+}
+
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=24),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),

@@ -15,7 +15,7 @@ from .permissions import (
     IsAdminGeneral, IsOwner, IsAdminOrOwner, 
     IsOwnerOfParking, IsAdminOrOwnerOfParking, CanManageParkingApprovals
 )
-from .models import ParkingLot, ParkingReview, ParkingApprovalRequest, ParkingImage
+from .models import ParkingLot, ParkingReview, ParkingApprovalRequest, ParkingImage, ParkingApprovalImage
 from .serializers import (
     ParkingLotClientSerializer, ParkingLotOwnerSerializer, ParkingLotAdminSerializer,
     ParkingLotListSerializer, ParkingReviewSerializer,
@@ -431,6 +431,7 @@ class ParkingApprovalViewSet(viewsets.ModelViewSet):
         """Solo owners pueden crear solicitudes"""
         if not self.request.user.is_owner:
             raise serializers.ValidationError("Solo los dueños pueden crear solicitudes de aprobación")
+        # Delegar la creación y el manejo de imágenes al serializer.create()
         serializer.save(solicitado_por=self.request.user)
 
     @action(detail=False, methods=['get'])

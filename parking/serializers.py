@@ -2,6 +2,7 @@
 from rest_framework import serializers
 from django.core.validators import RegexValidator
 from .models import ParkingLot, ParkingImage, ParkingReview, ParkingApprovalRequest
+from .models import ParkingApprovalImage
 from django.contrib.auth import get_user_model
 
 User = get_user_model()
@@ -12,6 +13,12 @@ User = get_user_model()
 class ParkingImageSerializer(serializers.ModelSerializer):
     class Meta:
         model = ParkingImage
+        fields = ['id', 'imagen', 'descripcion', 'creado_en']
+
+
+class ParkingApprovalImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ParkingApprovalImage
         fields = ['id', 'imagen', 'descripcion', 'creado_en']
 
 class ParkingReviewSerializer(serializers.ModelSerializer):
@@ -153,9 +160,15 @@ class ParkingApprovalRequestSerializer(serializers.ModelSerializer):
             'notas_aprobacion', 'motivo_rechazo', 'status', 'solicitado_por',
             'solicitado_por_nombre', 'revisado_por', 'revisado_por_nombre',
             'fecha_solicitud', 'fecha_revision', 'estacionamiento_creado',
-            'estacionamiento_creado_id', 'dias_pendiente'
+            'estacionamiento_creado_id', 'dias_pendiente', 'imagenes_solicitud'
         ]
         read_only_fields = ['solicitado_por', 'fecha_solicitud', 'fecha_revision', 'estacionamiento_creado']
+
+    imagenes_solicitud = serializers.SerializerMethodField()
+
+    def get_imagenes_solicitud(self, obj):
+        images = obj.imagenes_solicitud.all()
+        return ParkingApprovalImageSerializer(images, many=True).data
 
 class ParkingApprovalActionSerializer(serializers.Serializer):
     motivo = serializers.CharField(required=False, allow_blank=True)
@@ -167,8 +180,32 @@ class ParkingApprovalCreateSerializer(serializers.ModelSerializer):
             'nombre', 'direccion', 'coordenadas', 'telefono', 'descripcion',
             'horario_apertura', 'horario_cierre', 'nivel_seguridad', 'tarifa_hora',
             'total_plazas', 'plazas_disponibles', 'servicios', 'panel_local_id',
-            'notas_aprobacion'
+            'notas_aprobacion', 'imagenes'
         ]
+
+    # Permitir subir múltiples imágenes en la creación (write-only)
+    imagenes = serializers.ListField(
+        child=serializers.ImageField(max_length=None, allow_empty_file=False, use_url=False),
+        write_only=True,
+        required=False
+    )
+
+    def create(self, validated_data):
+        # Extraer imágenes antes de crear la instancia para que no se pasen
+        # como kwargs al modelo (causaría TypeError)
+        images = validated_data.pop('imagenes', []) if 'imagenes' in validated_data else []
+        solicitud = super().create(validated_data)
+
+        # Crear registros ParkingApprovalImage para cada archivo
+        from .models import ParkingApprovalImage
+        for img in images:
+            try:
+                ParkingApprovalImage.objects.create(solicitud=solicitud, imagen=img)
+            except Exception:
+                # No queremos que la creación de una imagen falle toda la solicitud
+                continue
+
+        return solicitud
 
 class ParkingApprovalDashboardSerializer(serializers.ModelSerializer):
     solicitado_por_nombre = serializers.CharField(source='solicitado_por.username', read_only=True)

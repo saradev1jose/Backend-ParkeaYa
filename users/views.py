@@ -330,3 +330,29 @@ def client_dashboard_stats(request):
             'monthly_earnings': 0
         }
     })
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def change_own_password(request):
+    """Permite al usuario autenticado cambiar su propia contraseña.
+    Recibe `old_password` y `new_password` en el body (JSON).
+    """
+    user = request.user
+    old_password = request.data.get('old_password')
+    new_password = request.data.get('new_password')
+    confirm_password = request.data.get('confirm_password')
+
+    if not old_password or not new_password:
+        return Response({'error': 'Se requieren la contraseña actual y la nueva.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if confirm_password is not None and new_password != confirm_password:
+        return Response({'error': 'La nueva contraseña y la confirmación no coinciden.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not user.check_password(old_password):
+        return Response({'error': 'Contraseña actual incorrecta.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    # Opcional: validar longitud mínima usando settings de Django; dejar que set_password maneje hashing
+    user.set_password(new_password)
+    user.save()
+    return Response({'message': 'Contraseña actualizada correctamente'})

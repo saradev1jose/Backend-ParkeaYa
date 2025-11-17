@@ -66,6 +66,8 @@ urlpatterns = [
          TicketViewSet.as_view({'get': 'by_parking'}), 
          name='tickets-by-parking'),
     
+    #Notifications app
+    path('api/notifications/', include('notifications.urls')),
 
     
     # Complaints app

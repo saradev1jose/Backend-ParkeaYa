@@ -5,7 +5,8 @@ from .views import (
     MyTokenObtainPairView, RegisterClientView, RegisterOwnerView,
     AdminUserViewSet, OwnerUserViewSet, ClientUserViewSet, CarViewSet,
     admin_panel_login, get_user_profile, check_panel_access,
-    admin_dashboard_stats, owner_dashboard_stats, client_dashboard_stats
+    admin_dashboard_stats, owner_dashboard_stats, client_dashboard_stats,
+    change_own_password
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 
@@ -37,6 +38,8 @@ urlpatterns = [
     
     # Incluir las rutas del router
     path('', include(router.urls)),
+    # Cambiar contraseña (usuario autenticado)
+    path('profile/change-password/', change_own_password, name='change-own-password'),
     # En users/urls.py, agrega esta línea:
     path('owner/me/', OwnerUserViewSet.as_view({'get': 'me', 'put': 'me'}), name='owner-me'),
 ]
