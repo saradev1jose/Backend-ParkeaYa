@@ -4,58 +4,83 @@ import './AdminSystem.css';
 
 const SystemSettings = () => {
   const [settings, setSettings] = useState({
-    // Configuración General
     siteName: 'Parkeaya',
-    siteDescription: 'Sistema de Reserva de Estacionamientos',
     contactEmail: 'admin@parkeaya.com',
-    supportPhone: '+57 1 2345678',
-    
-    // Configuración de Negocio
     commissionRate: 30,
-    minimumReservationTime: 1, // horas
-    maximumReservationTime: 24, // horas
-    cancellationPolicy: 'flexible', // flexible, moderate, strict
-    
-    // Configuración de Pagos
-    paymentMethods: ['credit_card', 'debit_card', 'pse', 'cash'],
-    currency: 'COP',
-    taxRate: 19,
-    
-    // Configuración de Notificaciones
-    emailNotifications: true,
-    smsNotifications: false,
-    pushNotifications: true,
-    
-    // Configuración de Seguridad
-    sessionTimeout: 60, // minutos
-    maxLoginAttempts: 5,
-    requireEmailVerification: true,
-    
-    // Configuración Técnica
-    maintenanceMode: false,
-    apiRateLimit: 100, // requests por minuto
-    cacheEnabled: true
+    currency: 'PEN',
+    maintenanceMode: false
   });
 
+  const [platformStats, setPlatformStats] = useState(null);
+  const [pendingParkings, setPendingParkings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saveStatus, setSaveStatus] = useState('');
 
-  // Cargar configuración actual
+  const API_BASE = 'http://localhost:8000/api';
+
   useEffect(() => {
-    loadCurrentSettings();
+    loadAdminData();
   }, []);
 
-  const loadCurrentSettings = async () => {
+  const getAuthHeaders = () => ({
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${localStorage.getItem('access_token')}`
+  });
+
+  const loadAdminData = async () => {
+    setLoading(true);
     try {
-      const response = await fetch('/api/admin/settings/', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-        }
+      // Cargar estadísticas de la plataforma
+      const analyticsRes = await fetch(`${API_BASE}/analytics/admin/dashboard/`, { 
+        headers: getAuthHeaders() 
       });
-      const data = await response.json();
-      setSettings(data);
+      if (analyticsRes.ok) {
+        const analyticsData = await analyticsRes.json();
+        setPlatformStats(analyticsData);
+      }
+
+      // Cargar parkings pendientes
+      const pendingRes = await fetch(`${API_BASE}/parking/admin/pending-parkings/`, { 
+        headers: getAuthHeaders() 
+      });
+      if (pendingRes.ok) {
+        const pending = await pendingRes.json();
+        setPendingParkings(pending.results || pending || []);
+      }
+
     } catch (error) {
-      console.error('Error cargando configuración:', error);
+      console.error('Error cargando datos:', error);
+      setSaveStatus('error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const approveParking = async (id) => {
+    try {
+      const res = await fetch(`${API_BASE}/parking/parkings/${id}/approve/`, { 
+        method: 'POST', 
+        headers: getAuthHeaders() 
+      });
+      if (res.ok) {
+        await loadAdminData();
+      }
+    } catch (error) {
+      console.error('Error aprobando parking:', error);
+    }
+  };
+
+  const rejectParking = async (id) => {
+    try {
+      const res = await fetch(`${API_BASE}/parking/parkings/${id}/reject/`, { 
+        method: 'POST', 
+        headers: getAuthHeaders() 
+      });
+      if (res.ok) {
+        await loadAdminData();
+      }
+    } catch (error) {
+      console.error('Error rechazando parking:', error);
     }
   };
 
@@ -64,37 +89,22 @@ const SystemSettings = () => {
     setSaveStatus('saving');
     
     try {
-      const response = await fetch('/api/admin/settings/', {
+      const res = await fetch(`${API_BASE}/admin/settings/`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('access_token')}`
-        },
+        headers: getAuthHeaders(),
         body: JSON.stringify(settings)
       });
 
-      if (response.ok) {
+      if (res.ok) {
         setSaveStatus('success');
-        setTimeout(() => setSaveStatus(''), 3000);
       } else {
-        throw new Error('Error guardando configuración');
+        setSaveStatus('error');
       }
     } catch (error) {
       setSaveStatus('error');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleResetToDefaults = () => {
-    if (window.confirm('¿Estás seguro de restaurar la configuración por defecto?')) {
-      setSettings({
-        ...settings,
-        commissionRate: 30,
-        minimumReservationTime: 1,
-        maximumReservationTime: 24,
-        cancellationPolicy: 'flexible'
-      });
+      setTimeout(() => setSaveStatus(''), 3000);
     }
   };
 
@@ -105,17 +115,9 @@ const SystemSettings = () => {
         <p>Gestiona la configuración general de la plataforma</p>
       </div>
 
-      <div className="settings-tabs">
-        <button className="tab-active">General</button>
-        <button>Pagos</button>
-        <button>Notificaciones</button>
-        <button>Seguridad</button>
-        <button>Avanzado</button>
-      </div>
-
       <div className="settings-content">
         
-        {/* SECCIÓN GENERAL */}
+        {/* CONFIGURACIÓN GENERAL */}
         <div className="settings-section">
           <h2>Configuración General</h2>
           
@@ -129,244 +131,27 @@ const SystemSettings = () => {
           </div>
 
           <div className="form-group">
-            <label>Descripción</label>
-            <textarea
-              value={settings.siteDescription}
-              onChange={(e) => setSettings({...settings, siteDescription: e.target.value})}
-              rows="3"
+            <label>Email de Contacto</label>
+            <input
+              type="email"
+              value={settings.contactEmail}
+              onChange={(e) => setSettings({...settings, contactEmail: e.target.value})}
             />
           </div>
 
-          <div className="form-row">
-            <div className="form-group">
-              <label>Email de Contacto</label>
-              <input
-                type="email"
-                value={settings.contactEmail}
-                onChange={(e) => setSettings({...settings, contactEmail: e.target.value})}
-              />
-            </div>
-            <div className="form-group">
-              <label>Teléfono de Soporte</label>
-              <input
-                type="text"
-                value={settings.supportPhone}
-                onChange={(e) => setSettings({...settings, supportPhone: e.target.value})}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* SECCIÓN DE NEGOCIO */}
-        <div className="settings-section">
-          <h2>Configuración de Negocio</h2>
-          
-          <div className="form-row">
-            <div className="form-group">
-              <label>Comisión de la Plataforma (%)</label>
-              <input
-                type="number"
-                min="0"
-                max="50"
-                value={settings.commissionRate}
-                onChange={(e) => setSettings({...settings, commissionRate: parseInt(e.target.value)})}
-              />
-              <small>Porcentaje que gana la plataforma por cada reserva</small>
-            </div>
-
-            <div className="form-group">
-              <label>Política de Cancelación</label>
-              <select
-                value={settings.cancellationPolicy}
-                onChange={(e) => setSettings({...settings, cancellationPolicy: e.target.value})}
-              >
-                <option value="flexible">Flexible (Reembolso completo)</option>
-                <option value="moderate">Moderada (Reembolso 50%)</option>
-                <option value="strict">Estricta (Sin reembolso)</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="form-row">
-            <div className="form-group">
-              <label>Tiempo Mínimo de Reserva (horas)</label>
-              <input
-                type="number"
-                min="1"
-                value={settings.minimumReservationTime}
-                onChange={(e) => setSettings({...settings, minimumReservationTime: parseInt(e.target.value)})}
-              />
-            </div>
-            <div className="form-group">
-              <label>Tiempo Máximo de Reserva (horas)</label>
-              <input
-                type="number"
-                min="1"
-                max="168"
-                value={settings.maximumReservationTime}
-                onChange={(e) => setSettings({...settings, maximumReservationTime: parseInt(e.target.value)})}
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* SECCIÓN DE PAGOS */}
-        <div className="settings-section">
-          <h2>Configuración de Pagos</h2>
-          
           <div className="form-group">
-            <label>Métodos de Pago Habilitados</label>
-            <div className="checkbox-group">
-              <label>
-                <input type="checkbox" checked={settings.paymentMethods.includes('credit_card')} 
-                  onChange={(e) => {
-                    const methods = e.target.checked 
-                      ? [...settings.paymentMethods, 'credit_card']
-                      : settings.paymentMethods.filter(m => m !== 'credit_card');
-                    setSettings({...settings, paymentMethods: methods});
-                  }}
-                />
-                Tarjeta de Crédito
-              </label>
-              <label>
-                <input type="checkbox" checked={settings.paymentMethods.includes('debit_card')} 
-                  onChange={(e) => {
-                    const methods = e.target.checked 
-                      ? [...settings.paymentMethods, 'debit_card']
-                      : settings.paymentMethods.filter(m => m !== 'debit_card');
-                    setSettings({...settings, paymentMethods: methods});
-                  }}
-                />
-                Tarjeta Débito
-              </label>
-              <label>
-                <input type="checkbox" checked={settings.paymentMethods.includes('pse')} 
-                  onChange={(e) => {
-                    const methods = e.target.checked 
-                      ? [...settings.paymentMethods, 'pse']
-                      : settings.paymentMethods.filter(m => m !== 'pse');
-                    setSettings({...settings, paymentMethods: methods});
-                  }}
-                />
-                PSE
-              </label>
-              <label>
-                <input type="checkbox" checked={settings.paymentMethods.includes('cash')} 
-                  onChange={(e) => {
-                    const methods = e.target.checked 
-                      ? [...settings.paymentMethods, 'cash']
-                      : settings.paymentMethods.filter(m => m !== 'cash');
-                    setSettings({...settings, paymentMethods: methods});
-                  }}
-                />
-                Efectivo
-              </label>
-            </div>
-          </div>
-
-          <div className="form-row">
-            <div className="form-group">
-              <label>Moneda Principal</label>
-              <select
-                value={settings.currency}
-                onChange={(e) => setSettings({...settings, currency: e.target.value})}
-              >
-                <option value="COP">Peso Colombiano (COP)</option>
-                <option value="USD">Dólar Americano (USD)</option>
-              </select>
-            </div>
-            <div className="form-group">
-              <label>IVA (%)</label>
-              <input
-                type="number"
-                min="0"
-                max="100"
-                step="0.1"
-                value={settings.taxRate}
-                onChange={(e) => setSettings({...settings, taxRate: parseFloat(e.target.value)})}
-              />
-            </div>
+            <label>Comisión de la Plataforma (%)</label>
+            <input
+              type="number"
+              min="0"
+              max="50"
+              value={settings.commissionRate}
+              onChange={(e) => setSettings({...settings, commissionRate: parseInt(e.target.value)})}
+            />
           </div>
         </div>
 
-        {/* SECCIÓN DE NOTIFICACIONES */}
-        <div className="settings-section">
-          <h2>Configuración de Notificaciones</h2>
-          
-          <div className="toggle-group">
-            <label className="toggle-item">
-              <span>Notificaciones por Email</span>
-              <input
-                type="checkbox"
-                checked={settings.emailNotifications}
-                onChange={(e) => setSettings({...settings, emailNotifications: e.target.checked})}
-              />
-              <span className="toggle-slider"></span>
-            </label>
-            
-            <label className="toggle-item">
-              <span>Notificaciones SMS</span>
-              <input
-                type="checkbox"
-                checked={settings.smsNotifications}
-                onChange={(e) => setSettings({...settings, smsNotifications: e.target.checked})}
-              />
-              <span className="toggle-slider"></span>
-            </label>
-            
-            <label className="toggle-item">
-              <span>Notificaciones Push</span>
-              <input
-                type="checkbox"
-                checked={settings.pushNotifications}
-                onChange={(e) => setSettings({...settings, pushNotifications: e.target.checked})}
-              />
-              <span className="toggle-slider"></span>
-            </label>
-          </div>
-        </div>
-
-        {/* SECCIÓN DE SEGURIDAD */}
-        <div className="settings-section">
-          <h2>Configuración de Seguridad</h2>
-          
-          <div className="form-row">
-            <div className="form-group">
-              <label>Tiempo de Expiración de Sesión (minutos)</label>
-              <input
-                type="number"
-                min="5"
-                max="480"
-                value={settings.sessionTimeout}
-                onChange={(e) => setSettings({...settings, sessionTimeout: parseInt(e.target.value)})}
-              />
-            </div>
-            <div className="form-group">
-              <label>Máximo de Intentos de Login</label>
-              <input
-                type="number"
-                min="1"
-                max="10"
-                value={settings.maxLoginAttempts}
-                onChange={(e) => setSettings({...settings, maxLoginAttempts: parseInt(e.target.value)})}
-              />
-            </div>
-          </div>
-
-          <div className="form-group">
-            <label className="toggle-item">
-              <span>Requerir Verificación de Email</span>
-              <input
-                type="checkbox"
-                checked={settings.requireEmailVerification}
-                onChange={(e) => setSettings({...settings, requireEmailVerification: e.target.checked})}
-              />
-              <span className="toggle-slider"></span>
-            </label>
-          </div>
-        </div>
-
-        {/* SECCIÓN AVANZADA */}
+        {/* CONFIGURACIÓN AVANZADA */}
         <div className="settings-section">
           <h2>Configuración Avanzada</h2>
           
@@ -380,32 +165,64 @@ const SystemSettings = () => {
               />
               <span className="toggle-slider"></span>
             </label>
-            <small>Cuando está activo, solo los administradores pueden acceder al sitio</small>
           </div>
+        </div>
 
-          <div className="form-row">
-            <div className="form-group">
-              <label>Límite de API Requests (por minuto)</label>
-              <input
-                type="number"
-                min="10"
-                max="1000"
-                value={settings.apiRateLimit}
-                onChange={(e) => setSettings({...settings, apiRateLimit: parseInt(e.target.value)})}
-              />
+        {/* RESUMEN RÁPIDO */}
+        <div className="settings-section">
+          <h2>Resumen de la Plataforma</h2>
+          <div className="summary-grid">
+            <div className="summary-card">
+              <h3>Total Reservas</h3>
+              <p>{platformStats?.total_reservations || '0'}</p>
             </div>
-            <div className="form-group">
-              <label className="toggle-item">
-                <span>Cache Habilitado</span>
-                <input
-                  type="checkbox"
-                  checked={settings.cacheEnabled}
-                  onChange={(e) => setSettings({...settings, cacheEnabled: e.target.checked})}
-                />
-                <span className="toggle-slider"></span>
-              </label>
+            <div className="summary-card">
+              <h3>Ingresos Totales</h3>
+              <p>S/ {platformStats?.total_revenue || '0'}</p>
+            </div>
+            <div className="summary-card">
+              <h3>Parkings Activos</h3>
+              <p>{platformStats?.active_parkings || '0'}</p>
+            </div>
+            <div className="summary-card">
+              <h3>Parkings Pendientes</h3>
+              <p>{pendingParkings.length}</p>
             </div>
           </div>
+        </div>
+
+        {/* PARKINGS PENDIENTES */}
+        <div className="settings-section">
+          <h2>Aprobación de Parkings</h2>
+          {pendingParkings.length === 0 ? (
+            <p>No hay parkings pendientes de aprobación.</p>
+          ) : (
+            <div className="pending-list">
+              {pendingParkings.map(parking => (
+                <div key={parking.id} className="pending-item">
+                  <div className="parking-info">
+                    <strong>{parking.nombre}</strong>
+                    <span>{parking.direccion}</span>
+                    <small>Propietario: {parking.propietario?.username || 'N/A'}</small>
+                  </div>
+                  <div className="pending-actions">
+                    <button 
+                      onClick={() => approveParking(parking.id)} 
+                      className="btn-approve"
+                    >
+                      Aprobar
+                    </button>
+                    <button 
+                      onClick={() => rejectParking(parking.id)} 
+                      className="btn-reject"
+                    >
+                      Rechazar
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* BOTONES DE ACCIÓN */}
@@ -417,19 +234,12 @@ const SystemSettings = () => {
           >
             {loading ? 'Guardando...' : 'Guardar Configuración'}
           </button>
-          
-          <button 
-            className="btn-secondary"
-            onClick={handleResetToDefaults}
-          >
-            Restablecer Valores por Defecto
-          </button>
 
           {saveStatus === 'success' && (
             <span className="save-status success">✓ Configuración guardada</span>
           )}
           {saveStatus === 'error' && (
-            <span className="save-status error">✗ Error guardando configuración</span>
+            <span className="save-status error">✗ Error al guardar</span>
           )}
         </div>
       </div>

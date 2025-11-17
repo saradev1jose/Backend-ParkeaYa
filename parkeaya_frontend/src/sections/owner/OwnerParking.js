@@ -31,17 +31,17 @@ const OwnerParking = ({ userRole }) => {
       
       console.log('🏢 Cargando datos del estacionamiento...');
       
-      // ✅ ENDPOINT CORREGIDO
+     
       const response = await fetch(`${API_BASE}/parking/my-parkings/`, {
         method: 'GET',
         headers: getAuthHeaders()
       });
 
-      console.log('📊 Response status parking:', response.status);
+      console.log(' Response status parking:', response.status);
 
       if (response.ok) {
         const data = await response.json();
-        console.log('✅ Datos del estacionamiento recibidos:', data);
+        console.log(' Datos del estacionamiento recibidos:', data);
         
         // Procesar la respuesta según la estructura real
         let parking = null;
@@ -71,12 +71,12 @@ const OwnerParking = ({ userRole }) => {
             plazas_disponibles: parking.plazas_disponibles || 0,
           });
         } else {
-          console.log('ℹ️ No se encontraron estacionamientos');
+          console.log(' No se encontraron estacionamientos');
           setError('No tienes estacionamientos registrados');
         }
       } else {
         const errorText = await response.text();
-        console.error('❌ Error en respuesta:', response.status, errorText);
+        console.error(' Error en respuesta:', response.status, errorText);
         if (response.status === 404) {
           setError('No tienes estacionamientos registrados');
         } else if (response.status === 401) {
@@ -95,8 +95,8 @@ const OwnerParking = ({ userRole }) => {
 
   const loadSpots = async () => {
     try {
-      // ❌ Este endpoint probablemente no existe - usamos datos simulados por ahora
-      console.log('⚠️ Endpoint de spots no implementado, usando datos de ejemplo');
+      //  Este endpoint probablemente no existe - usamos datos simulados por ahora
+      console.log(' Endpoint de spots no implementado, usando datos de ejemplo');
       
       
       if (parkingData) {
@@ -128,7 +128,7 @@ const OwnerParking = ({ userRole }) => {
         return;
       }
 
-      console.log('💾 Guardando cambios...', formData);
+      console.log(' Guardando cambios...', formData);
 
       
       const response = await fetch(`${API_BASE}/parking/parkings/${parkingData.id}/`, {
@@ -202,9 +202,9 @@ const OwnerParking = ({ userRole }) => {
   };
 
   const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('es-MX', {
+    return new Intl.NumberFormat('es-PE', {
       style: 'currency',
-      currency: 'MXN'
+      currency: 'PEN'
     }).format(amount);
   };
 
@@ -324,7 +324,7 @@ const OwnerParking = ({ userRole }) => {
 
   return (
     <div className="owner-parking">
-      {/* 🔥 HEADER */}
+      {/*  HEADER */}
       <div className="owner-parking-header">
         <div className="header-content">
           <h1>{parkingData?.nombre || 'Mi Estacionamiento'}</h1>

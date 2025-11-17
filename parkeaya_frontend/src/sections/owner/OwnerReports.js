@@ -56,15 +56,15 @@ const OwnerReports = ({ userRole }) => {
 
       if (response.ok) {
         const data = await response.json();
-        console.log('✅ Reportes cargados:', data);
+        console.log('Reportes cargados:', data);
         setReportData(data);
       } else {
         const errorText = await response.text();
-        console.error('❌ Error en respuesta:', errorText);
+        console.error(' Error en respuesta:', errorText);
         setError(`Error ${response.status} al cargar reportes`);
       }
     } catch (error) {
-      console.error('💥 Error cargando reportes:', error);
+      console.error(' Error cargando reportes:', error);
       setError('Error de conexión con el servidor');
     } finally {
       setLoading(false);
@@ -125,7 +125,6 @@ const OwnerReports = ({ userRole }) => {
           <div className="metric-content">
             <h3>{formatCurrency(reportData?.total_earnings || 0)}</h3>
             <p>Ingresos Totales</p>
-            <span className="metric-trend positive">+12.5% vs mes anterior</span>
           </div>
         </div>
 

@@ -51,11 +51,11 @@ const AdminFinance = ({ userRole }) => {
       }
 
       const data = await response.json();
-      console.log('✅ Datos financieros:', data);
+      console.log(' Datos financieros:', data);
       setFinanceData(data);
       setError(null);
     } catch (error) {
-      console.error('💥 Error cargando datos financieros:', error);
+      console.error(' Error cargando datos financieros:', error);
       setError(error.message || 'Error de conexión con el servidor');
       setFinanceData(null);
     } finally {
@@ -65,7 +65,7 @@ const AdminFinance = ({ userRole }) => {
 
   const loadTransactions = async () => {
     try {
-      console.log('🔄 Cargando transacciones...');
+      console.log(' Cargando transacciones...');
       
       const params = new URLSearchParams({
         start_date: selectedPeriod.startDate,
@@ -83,10 +83,10 @@ const AdminFinance = ({ userRole }) => {
       }
 
       const data = await response.json();
-      console.log('✅ Transacciones cargadas:', data);
+      console.log(' Transacciones cargadas:', data);
       setTransactions(data.results || []);
     } catch (error) {
-      console.error('💥 Error cargando transacciones:', error);
+      console.error(' Error cargando transacciones:', error);
       setError(error.message || 'Error cargando transacciones');
       setTransactions([]);
     }
@@ -94,7 +94,7 @@ const AdminFinance = ({ userRole }) => {
 
   // Funciones de utilidad para formatear datos
   const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString('es-CO', {
+    return new Date(dateString).toLocaleDateString('es-PE', {
       year: 'numeric',
       month: 'long',
       day: 'numeric'
@@ -102,9 +102,9 @@ const AdminFinance = ({ userRole }) => {
   };
 
   const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('es-CO', {
+    return new Intl.NumberFormat('es-PE', {
       style: 'currency',
-      currency: 'COP'
+      currency: 'PEN'
     }).format(amount);
   };
 
@@ -153,7 +153,7 @@ const AdminFinance = ({ userRole }) => {
 
   return (
     <div className="admin-finance">
-      {/* 🔥 HEADER */}
+      {/*  HEADER */}
       <div className="admin-finance-header">
         <div className="header-content">
           <h1>Gestión Financiera</h1>
@@ -303,7 +303,7 @@ const AdminFinance = ({ userRole }) => {
           </div>
         </div>
 
-        {/* 🏆 TOP EARNERS */}
+        {/* TOP EARNERS */}
         <div className="top-earners-section">
           <h2>Estacionamientos Más Rentables</h2>
           <div className="top-earners-list">

@@ -376,13 +376,17 @@ def owner_analytics_dashboard(request):
         
         performance_data = []
         for parking in parking_performance:
-            avg_rating = Reservation.objects.filter(estacionamiento=parking).aggregate(avg=Avg('rating'))['avg'] or 0
+            # Calcular tasa de ocupación basada en reservas
+            reservations_count = Reservation.objects.filter(estacionamiento=parking).count()
+            total_capacity = parking.total_plazas if hasattr(parking, 'total_plazas') else 1
+            occupancy_rate = (reservations_count / max(1, total_capacity)) * 100 if total_capacity > 0 else 0
+            
             performance_data.append({
                 'id': parking.id,
                 'nombre': parking.nombre,
                 'reservations': parking.reservation_count or 0,
                 'earnings': float(parking.total_earnings or 0),
-                'occupancy_rate': float(avg_rating * 20)
+                'occupancy_rate': float(occupancy_rate)
             })
         
         daily_data = get_owner_daily_analytics(user, 30)
@@ -407,6 +411,8 @@ def owner_analytics_dashboard(request):
         }
         return Response(response_data)
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return Response({'error': str(e)}, status=500)
 
 @api_view(['GET'])
@@ -460,18 +466,19 @@ def owner_reservation_analytics(request):
             total_revenue=Sum('payment__monto')
         )
         
-        avg_rating = reservations.aggregate(avg_rating=Avg('rating'))['avg_rating'] or 0
-        
+        # Calcular horas pico
         popular_hours = reservations.values('hora_entrada__hour').annotate(
             count=Count('id')
         ).order_by('-count')[:5]
         
         response_data = {
             'status_distribution': list(status_stats),
-            'average_rating': round(avg_rating, 2),
+            'average_rating': 0,
             'popular_hours': list(popular_hours),
             'total_reservations': reservations.count()
         }
         return Response(response_data)
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return Response({'error': str(e)}, status=500)
