@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import './OwnerProfile.css';
+import API_BASE from '../../config';
 
 const OwnerProfile = () => {
   const [ownerData, setOwnerData] = useState(null);
@@ -25,18 +26,23 @@ const OwnerProfile = () => {
     total_plazas: '',
     plazas_disponibles: '',
     servicios: [],
-    imagenes: []
+    imagenes: [],
+    imagen_principal: null
   });
 
-  const API_BASE = 'http://localhost:8000/api';
-
-  const getAuthHeaders = () => {
+  const getAuthHeaders = (includeJson = true) => {
     const token = localStorage.getItem('access_token');
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`
-    };
+    const headers = {};
+    if (includeJson) headers['Content-Type'] = 'application/json';
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return headers;
   };
+
+  // Estado para ver/editar un estacionamiento
+  const [selectedParking, setSelectedParking] = useState(null);
+  const [showViewParking, setShowViewParking] = useState(false);
+  const [showEditParking, setShowEditParking] = useState(false);
+  const [editParkingForm, setEditParkingForm] = useState(null);
 
   // Cargar datos del owner
   const loadOwnerData = async () => {
@@ -183,6 +189,11 @@ const OwnerProfile = () => {
       formData.append('servicios', JSON.stringify(parkingForm.servicios || []));
       formData.append('panel_local_id', `owner_${ownerData?.id}_${Date.now()}`);
 
+      // Imagen principal (opcional)
+      if (parkingForm.imagen_principal) {
+        formData.append('imagen_principal', parkingForm.imagen_principal);
+      }
+
       // Adjuntar imágenes (campo 'imagenes')
       if (parkingForm.imagenes && parkingForm.imagenes.length > 0) {
         parkingForm.imagenes.forEach((file, idx) => {
@@ -218,6 +229,127 @@ const OwnerProfile = () => {
     }
   };
 
+  // Ver detalles de un parking (trae detalle desde la API)
+  const viewParkingDetails = async (id) => {
+    try {
+      const response = await fetch(`${API_BASE}/parkings/${id}/`, {
+        method: 'GET',
+        headers: getAuthHeaders()
+      });
+      if (!response.ok) throw new Error(`Error ${response.status}`);
+      const data = await response.json();
+      setSelectedParking(data);
+      setShowViewParking(true);
+    } catch (error) {
+      console.error('Error cargando detalle del parking:', error);
+      showNotification('No se pudo cargar el detalle del estacionamiento', 'error');
+    }
+  };
+
+  // Preparar formulario de edición
+  const openEditParking = (parking) => {
+    setEditParkingForm({
+      id: parking.id,
+      nombre: parking.nombre || '',
+      direccion: parking.direccion || '',
+      coordenadas: parking.coordenadas || '',
+      telefono: parking.telefono || '',
+      descripcion: parking.descripcion || '',
+      horario_apertura: parking.horario_apertura || '',
+      horario_cierre: parking.horario_cierre || '',
+      nivel_seguridad: parking.nivel_seguridad || 'Estándar',
+      tarifa_hora: parking.tarifa_hora || '',
+      total_plazas: parking.total_plazas || '',
+      plazas_disponibles: parking.plazas_disponibles || '',
+      imagen_principal: parking.imagen_principal || null
+    });
+    setShowEditParking(true);
+  };
+
+  const handleEditParkingChange = (e) => {
+    const { name, value, type, files } = e.target;
+    if (type === 'file') {
+      const file = files && files[0] ? files[0] : null;
+      setEditParkingForm(prev => ({ ...prev, [name]: file }));
+      return;
+    }
+    setEditParkingForm(prev => ({ ...prev, [name]: value }));
+  };
+
+  // Enviar actualización del parking (PUT)
+  const submitEditParking = async (e) => {
+    e.preventDefault();
+    try {
+      if (!editParkingForm || !editParkingForm.id) return;
+      const payload = { ...editParkingForm };
+      delete payload.id;
+
+      let response;
+      const token = localStorage.getItem('access_token');
+      // Si imagen_principal es un archivo, enviar multipart/form-data
+      if (payload.imagen_principal && typeof payload.imagen_principal !== 'string') {
+        const form = new FormData();
+        Object.keys(payload).forEach(key => {
+          if (key === 'imagen_principal') return;
+          const val = payload[key];
+          if (val === null || val === undefined) return;
+          if (typeof val === 'object' && !(val instanceof File)) {
+            form.append(key, JSON.stringify(val));
+          } else {
+            form.append(key, val);
+          }
+        });
+        form.append('imagen_principal', payload.imagen_principal);
+
+        response = await fetch(`${API_BASE}/parkings/${editParkingForm.id}/`, {
+          method: 'PUT',
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+          body: form
+        });
+      } else {
+        response = await fetch(`${API_BASE}/parkings/${editParkingForm.id}/`, {
+          method: 'PUT',
+          headers: getAuthHeaders(true),
+          body: JSON.stringify(payload)
+        });
+      }
+
+      if (response.ok) {
+        await response.json().catch(() => null);
+        showNotification('Estacionamiento actualizado', 'success');
+        setShowEditParking(false);
+        setEditParkingForm(null);
+        // recargar lista
+        await loadParkingData();
+      } else {
+        // Intentar leer errores devueltos por el backend
+        const errorData = await response.json().catch(() => null);
+        console.error('Error response from PUT /parkings/:', errorData);
+        // Formatear mensaje legible
+        let msg = 'Error actualizando estacionamiento';
+        if (errorData) {
+          if (errorData.detail) msg = errorData.detail;
+          else if (typeof errorData === 'object') {
+            // Convertir errores por campo a una cadena
+            const parts = [];
+            for (const k of Object.keys(errorData)) {
+              const v = errorData[k];
+              if (Array.isArray(v)) parts.push(`${k}: ${v.join('; ')}`);
+              else parts.push(`${k}: ${v}`);
+            }
+            if (parts.length) msg = parts.join(' | ');
+          } else if (typeof errorData === 'string') {
+            msg = errorData;
+          }
+        }
+        throw new Error(msg);
+      }
+    } catch (error) {
+      console.error('Error actualizando parking:', error);
+      showNotification(error.message || 'Error actualizando estacionamiento', 'error');
+    }
+  };
+
   // Resetear formulario de estacionamiento
   const resetParkingForm = () => {
     setParkingForm({
@@ -233,7 +365,8 @@ const OwnerProfile = () => {
       total_plazas: '',
       plazas_disponibles: '',
       servicios: [],
-      imagenes: []
+      imagenes: [],
+      imagen_principal: null
     });
   };
 
@@ -266,9 +399,13 @@ const OwnerProfile = () => {
     }
 
     if (type === 'file') {
-      // multiple files
+      // Diferenciar entre imagen principal (single) y múltiples imágenes
       const files = Array.from(e.target.files || []);
-      setParkingForm(prev => ({ ...prev, imagenes: files }));
+      if (name === 'imagen_principal') {
+        setParkingForm(prev => ({ ...prev, imagen_principal: files[0] || null }));
+      } else {
+        setParkingForm(prev => ({ ...prev, imagenes: files }));
+      }
       return;
     } else {
       setParkingForm(prev => ({
@@ -289,20 +426,7 @@ const OwnerProfile = () => {
     }
   };
 
-  // Formatear hora para input time
-  const formatTimeForInput = (timeString) => {
-    if (!timeString) return '';
-    try {
-     
-      if (timeString.match(/^\d{2}:\d{2}$/)) {
-        return timeString;
-      }
-      const time = new Date(`1970-01-01T${timeString}Z`);
-      return time.toTimeString().slice(0, 5);
-    } catch (error) {
-      return '';
-    }
-  };
+  
 
   const showNotification = (message, type) => {
     // Usar el sistema de notificaciones existente del dashboard
@@ -775,6 +899,20 @@ const OwnerProfile = () => {
                         <div className="form-group">
                           <label>
                             <i className="fas fa-image"></i>
+                            Imagen principal (opcional)
+                          </label>
+                          <input
+                            type="file"
+                            name="imagen_principal"
+                            accept="image/*"
+                            onChange={handleParkingInputChange}
+                          />
+                          <small className="form-help">Imagen principal mostrada en listados (JPG, PNG).</small>
+                        </div>
+
+                        <div className="form-group">
+                          <label>
+                            <i className="fas fa-images"></i>
                             Imágenes del estacionamiento (opcional)
                           </label>
                           <input
@@ -1022,11 +1160,11 @@ const OwnerProfile = () => {
                     </div>
                     
                     <div className="parking-actions">
-                      <button className="action-btn edit">
+                      <button className="action-btn edit" onClick={() => openEditParking(parking)}>
                         <i className="fas fa-edit"></i>
                         Editar
                       </button>
-                      <button className="action-btn view">
+                      <button className="action-btn view" onClick={() => viewParkingDetails(parking.id)}>
                         <i className="fas fa-eye"></i>
                         Ver Detalles
                       </button>
@@ -1050,6 +1188,114 @@ const OwnerProfile = () => {
                   <i className="fas fa-plus"></i>
                   Agregar Primer Estacionamiento
                 </button>
+              </div>
+            )}
+            {/* Modal: Ver detalle de estacionamiento */}
+            {showViewParking && selectedParking && (
+              <div className="parking-view-modal">
+                <div className="modal-content">
+                  <div className="modal-header">
+                    <h3>{selectedParking.nombre}</h3>
+                    <button className="close-btn" onClick={() => setShowViewParking(false)}><i className="fas fa-times"></i></button>
+                  </div>
+                  <div className="modal-body">
+                    {selectedParking.imagen_principal && (
+                      <div className="parking-main-image">
+                        <img src={selectedParking.imagen_principal} alt={selectedParking.nombre} style={{ maxWidth: '100%', borderRadius: 8 }} />
+                      </div>
+                    )}
+                    {(!selectedParking.imagen_principal && selectedParking.imagenes && selectedParking.imagenes.length > 0) && (
+                      <div className="parking-images-gallery">
+                        {selectedParking.imagenes.map((img, idx) => (
+                          <img key={idx} src={img.imagen || img.url || img} alt={`img-${idx}`} style={{ width: 120, marginRight: 8, borderRadius: 6 }} />
+                        ))}
+                      </div>
+                    )}
+                    <p><strong>Dirección:</strong> {selectedParking.direccion}</p>
+                    <p><strong>Teléfono:</strong> {selectedParking.telefono}</p>
+                    <p><strong>Tarifa/hora:</strong> S/ {parseFloat(selectedParking.tarifa_hora || 0).toFixed(2)}</p>
+                    <p><strong>Plazas:</strong> {selectedParking.plazas_disponibles || 0}/{selectedParking.total_plazas || 0}</p>
+                    <p><strong>Nivel seguridad:</strong> {selectedParking.nivel_seguridad}</p>
+                    <p><strong>Descripción:</strong> {selectedParking.descripcion || '—'}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Modal: Editar estacionamiento */}
+            {showEditParking && editParkingForm && (
+              <div className="parking-edit-modal">
+                <div className="modal-content">
+                  <div className="modal-header">
+                    <h3>Editar Estacionamiento</h3>
+                    <button className="close-btn" onClick={() => { setShowEditParking(false); setEditParkingForm(null); }}><i className="fas fa-times"></i></button>
+                  </div>
+                  <form className="modal-body" onSubmit={submitEditParking}>
+                    <div className="form-group">
+                      <label>Nombre</label>
+                      <input name="nombre" value={editParkingForm.nombre} onChange={handleEditParkingChange} required />
+                    </div>
+                    <div className="form-group">
+                      <label>Dirección</label>
+                      <input name="direccion" value={editParkingForm.direccion} onChange={handleEditParkingChange} required />
+                    </div>
+                    <div className="form-group">
+                      <label>Coordenadas</label>
+                      <input name="coordenadas" value={editParkingForm.coordenadas || ''} onChange={handleEditParkingChange} placeholder="lat, lon" />
+                    </div>
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>Horario Apertura</label>
+                        <input type="time" name="horario_apertura" value={editParkingForm.horario_apertura || ''} onChange={handleEditParkingChange} />
+                      </div>
+                      <div className="form-group">
+                        <label>Horario Cierre</label>
+                        <input type="time" name="horario_cierre" value={editParkingForm.horario_cierre || ''} onChange={handleEditParkingChange} />
+                      </div>
+                    </div>
+                    <div className="form-group">
+                      <label>Nivel de Seguridad</label>
+                      <select name="nivel_seguridad" value={editParkingForm.nivel_seguridad || 'Estándar'} onChange={handleEditParkingChange}>
+                        {securityLevels.map(level => (
+                          <option key={level} value={level}>{level}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label>Imagen principal (opcional)</label>
+                      <input type="file" name="imagen_principal" accept="image/*" onChange={handleEditParkingChange} />
+                      {editParkingForm.imagen_principal && typeof editParkingForm.imagen_principal === 'string' && (
+                        <div style={{ marginTop: 8 }}><img src={editParkingForm.imagen_principal} alt="preview" style={{ maxWidth: 160, borderRadius: 6 }} /></div>
+                      )}
+                    </div>
+                    <div className="form-group">
+                      <label>Teléfono</label>
+                      <input name="telefono" value={editParkingForm.telefono} onChange={handleEditParkingChange} />
+                    </div>
+                    <div className="form-group">
+                      <label>Tarifa / hora (S/)</label>
+                      <input type="number" step="0.01" name="tarifa_hora" value={editParkingForm.tarifa_hora} onChange={handleEditParkingChange} />
+                    </div>
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>Total Plazas</label>
+                        <input type="number" name="total_plazas" value={editParkingForm.total_plazas} onChange={handleEditParkingChange} />
+                      </div>
+                      <div className="form-group">
+                        <label>Plazas Disponibles</label>
+                        <input type="number" name="plazas_disponibles" value={editParkingForm.plazas_disponibles} onChange={handleEditParkingChange} />
+                      </div>
+                    </div>
+                    <div className="form-group">
+                      <label>Descripción</label>
+                      <textarea name="descripcion" value={editParkingForm.descripcion} onChange={handleEditParkingChange} rows="3" />
+                    </div>
+                    <div className="form-actions">
+                      <button type="button" className="cancel-btn" onClick={() => { setShowEditParking(false); setEditParkingForm(null); }}>Cancelar</button>
+                      <button type="submit" className="save-btn">Guardar</button>
+                    </div>
+                  </form>
+                </div>
               </div>
             )}
           </div>

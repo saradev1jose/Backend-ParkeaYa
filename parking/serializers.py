@@ -56,6 +56,7 @@ class ParkingLotBaseSerializer(serializers.ModelSerializer):
             'rating_promedio', 'total_reseñas', 'esta_abierto',
             'porcentaje_ocupacion', 'aprobado', 'activo'
         ]
+        read_only_fields = ['dueno']
 
     def get_porcentaje_ocupacion(self, obj):
         if obj.total_plazas == 0:
@@ -63,6 +64,7 @@ class ParkingLotBaseSerializer(serializers.ModelSerializer):
         return round(((obj.total_plazas - obj.plazas_disponibles) / obj.total_plazas) * 100, 2)
 
 class ParkingLotSerializer(ParkingLotBaseSerializer):
+    imagen_principal = serializers.ImageField(read_only=True)
     class Meta(ParkingLotBaseSerializer.Meta):
         model = ParkingLot
     
@@ -82,7 +84,7 @@ class ParkingLotSerializer(ParkingLotBaseSerializer):
             'tarifa_hora', 'total_plazas', 'plazas_disponibles',
             'nivel_seguridad', 'descripcion', 'coordenadas',
             'horario_apertura', 'horario_cierre', 'telefono',
-            'rating_promedio', 'total_reseñas', 'esta_abierto',
+            'rating_promedio', 'imagen_principal','total_reseñas', 'esta_abierto',
             'porcentaje_ocupacion', 'aprobado', 'activo'
         ]
         read_only_fields = ['rating_promedio', 'total_reseñas']

@@ -46,6 +46,12 @@ class ParkingLot(models.Model):
     total_reseñas = models.PositiveIntegerField(default=0)
     aprobado = models.BooleanField(default=False) 
     activo = models.BooleanField(default=False)  
+    imagen_principal = models.ImageField(
+        upload_to='parking_main_images/',
+        null=True,
+        blank=True,
+        help_text="Imagen principal del estacionamiento"
+    )
 
     class Meta:
         indexes = [
@@ -260,10 +266,7 @@ class ParkingApprovalRequest(models.Model):
 
 
 class ParkingApprovalImage(models.Model):
-    """Imágenes asociadas a una solicitud de aprobación de estacionamiento.
-    Se almacenan aquí hasta que la solicitud sea aceptada, momento en el que
-    las imágenes pueden copiarse al `ParkingImage` del `ParkingLot` creado.
-    """
+   
     solicitud = models.ForeignKey(ParkingApprovalRequest, on_delete=models.CASCADE, related_name='imagenes_solicitud')
     imagen = models.ImageField(upload_to='parking_approval_images/')
     descripcion = models.CharField(max_length=100, blank=True)
