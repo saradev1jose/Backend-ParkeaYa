@@ -50,21 +50,21 @@ const OwnerProfile = () => {
       const response = await fetch(`${API_BASE}/users/profile/`, {
         headers: getAuthHeaders()
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         console.log('📊 Datos del owner (raw):', data);
 
         const normalized = {
-         
+
           ...data,
-          
+
           first_name: data.first_name || data.nombre || data.name || (data.full_name ? data.full_name.split(' ')[0] : ''),
           last_name: data.last_name || data.apellido || (data.full_name ? data.full_name.split(' ').slice(1).join(' ') : ''),
           phone_number: data.phone_number || data.telefono || data.phone || '',
           address: data.address || data.direccion || data.address_line || '',
           is_active: (data.is_active !== undefined) ? data.is_active : (data.activo !== undefined ? data.activo : true),
-      
+
           date_joined: data.date_joined || data.created_at || data.fecha_creacion || null
         };
 
@@ -91,7 +91,7 @@ const OwnerProfile = () => {
       const response = await fetch(`${API_BASE}/parking/my-parkings/`, {
         headers: getAuthHeaders()
       });
-      
+
       console.log('🔄 Cargando estacionamientos...');
       if (response.ok) {
         const data = await response.json();
@@ -138,7 +138,7 @@ const OwnerProfile = () => {
         setLoading(false);
       }
     };
-    
+
     loadData();
   }, []);
 
@@ -232,122 +232,203 @@ const OwnerProfile = () => {
   // Ver detalles de un parking (trae detalle desde la API)
   const viewParkingDetails = async (id) => {
     try {
-      const response = await fetch(`${API_BASE}/parkings/${id}/`, {
+      console.log('🔍 Cargando detalle del parking ID:', id);
+
+      const response = await fetch(`${API_BASE}/parking/${id}/`, { // ✅ URL corregida
         method: 'GET',
         headers: getAuthHeaders()
       });
-      if (!response.ok) throw new Error(`Error ${response.status}`);
+
+      console.log('📡 Response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Error response:', errorText);
+        throw new Error(`Error ${response.status}: ${errorText}`);
+      }
+
       const data = await response.json();
+      console.log('✅ Detalle del parking cargado:', data);
+
       setSelectedParking(data);
       setShowViewParking(true);
+
     } catch (error) {
-      console.error('Error cargando detalle del parking:', error);
-      showNotification('No se pudo cargar el detalle del estacionamiento', 'error');
+      console.error('❌ Error cargando detalle del parking:', error);
+      showNotification(`No se pudo cargar el detalle: ${error.message}`, 'error');
     }
   };
 
-  // Preparar formulario de edición
-  const openEditParking = (parking) => {
-    setEditParkingForm({
-      id: parking.id,
-      nombre: parking.nombre || '',
-      direccion: parking.direccion || '',
-      coordenadas: parking.coordenadas || '',
-      telefono: parking.telefono || '',
-      descripcion: parking.descripcion || '',
-      horario_apertura: parking.horario_apertura || '',
-      horario_cierre: parking.horario_cierre || '',
-      nivel_seguridad: parking.nivel_seguridad || 'Estándar',
-      tarifa_hora: parking.tarifa_hora || '',
-      total_plazas: parking.total_plazas || '',
-      plazas_disponibles: parking.plazas_disponibles || '',
-      imagen_principal: parking.imagen_principal || null
-    });
-    setShowEditParking(true);
-  };
+  // Preparar formulario de edición - MEJORADO
+  const openEditParking = async (parking) => {
+    try {
+      console.log('✏️ Preparando edición del parking:', parking.id);
 
-  const handleEditParkingChange = (e) => {
-    const { name, value, type, files } = e.target;
-    if (type === 'file') {
-      const file = files && files[0] ? files[0] : null;
-      setEditParkingForm(prev => ({ ...prev, [name]: file }));
-      return;
+      // Primero cargar los datos completos del parking
+      const response = await fetch(`${API_BASE}/parking/${parking.id}/`, {
+        headers: getAuthHeaders()
+      });
+
+      if (!response.ok) throw new Error('Error cargando datos para editar');
+
+      const fullParkingData = await response.json();
+
+      setEditParkingForm({
+        id: fullParkingData.id,
+        nombre: fullParkingData.nombre || '',
+        direccion: fullParkingData.direccion || '',
+        coordenadas: fullParkingData.coordenadas || '',
+        telefono: fullParkingData.telefono || '',
+        descripcion: fullParkingData.descripcion || '',
+        horario_apertura: fullParkingData.horario_apertura || '',
+        horario_cierre: fullParkingData.horario_cierre || '',
+        nivel_seguridad: fullParkingData.nivel_seguridad || 'Estándar',
+        tarifa_hora: fullParkingData.tarifa_hora || '',
+        total_plazas: fullParkingData.total_plazas || '',
+        plazas_disponibles: fullParkingData.plazas_disponibles || '',
+        imagen_principal: fullParkingData.imagen_principal || null,
+        servicios: fullParkingData.servicios || []
+      });
+
+      setShowEditParking(true);
+
+    } catch (error) {
+      console.error('❌ Error cargando datos para editar:', error);
+      // Fallback: usar los datos básicos que ya tenemos
+      setEditParkingForm({
+        id: parking.id,
+        nombre: parking.nombre || '',
+        direccion: parking.direccion || '',
+        coordenadas: parking.coordenadas || '',
+        telefono: parking.telefono || '',
+        descripcion: parking.descripcion || '',
+        horario_apertura: parking.horario_apertura || '',
+        horario_cierre: parking.horario_cierre || '',
+        nivel_seguridad: parking.nivel_seguridad || 'Estándar',
+        tarifa_hora: parking.tarifa_hora || '',
+        total_plazas: parking.total_plazas || '',
+        plazas_disponibles: parking.plazas_disponibles || '',
+        imagen_principal: parking.imagen_principal || null,
+        servicios: parking.servicios || []
+      });
+      setShowEditParking(true);
     }
-    setEditParkingForm(prev => ({ ...prev, [name]: value }));
   };
 
-  // Enviar actualización del parking (PUT)
+  // Enviar actualización del parking (PUT) - CORREGIDO
   const submitEditParking = async (e) => {
     e.preventDefault();
     try {
-      if (!editParkingForm || !editParkingForm.id) return;
+      if (!editParkingForm || !editParkingForm.id) {
+        showNotification('No hay datos para actualizar', 'error');
+        return;
+      }
+
+      console.log('📤 Enviando actualización del parking:', editParkingForm);
+
       const payload = { ...editParkingForm };
       delete payload.id;
 
       let response;
       const token = localStorage.getItem('access_token');
+
       // Si imagen_principal es un archivo, enviar multipart/form-data
       if (payload.imagen_principal && typeof payload.imagen_principal !== 'string') {
-        const form = new FormData();
+        const formData = new FormData();
+
+        // Agregar todos los campos al FormData
         Object.keys(payload).forEach(key => {
-          if (key === 'imagen_principal') return;
-          const val = payload[key];
-          if (val === null || val === undefined) return;
-          if (typeof val === 'object' && !(val instanceof File)) {
-            form.append(key, JSON.stringify(val));
-          } else {
-            form.append(key, val);
+          if (payload[key] !== null && payload[key] !== undefined) {
+            if (key === 'servicios' && Array.isArray(payload[key])) {
+              formData.append(key, JSON.stringify(payload[key]));
+            } else if (key !== 'imagen_principal') {
+              formData.append(key, payload[key]);
+            }
           }
         });
-        form.append('imagen_principal', payload.imagen_principal);
 
-        response = await fetch(`${API_BASE}/parkings/${editParkingForm.id}/`, {
+        // Agregar la imagen principal si es un archivo nuevo
+        formData.append('imagen_principal', payload.imagen_principal);
+
+        response = await fetch(`${API_BASE}/parking/${editParkingForm.id}/`, { // ✅ URL corregida
           method: 'PUT',
           headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-          body: form
+          body: formData
         });
       } else {
-        response = await fetch(`${API_BASE}/parkings/${editParkingForm.id}/`, {
+        // Enviar como JSON normal
+        response = await fetch(`${API_BASE}/parking/${editParkingForm.id}/`, { // ✅ URL corregida
           method: 'PUT',
           headers: getAuthHeaders(true),
           body: JSON.stringify(payload)
         });
       }
 
+      console.log('📡 Response status:', response.status);
+
       if (response.ok) {
-        await response.json().catch(() => null);
-        showNotification('Estacionamiento actualizado', 'success');
+        const updatedData = await response.json();
+        console.log('✅ Parking actualizado:', updatedData);
+
+        showNotification('Estacionamiento actualizado correctamente', 'success');
         setShowEditParking(false);
         setEditParkingForm(null);
-        // recargar lista
+
+        // Recargar lista de estacionamientos
         await loadParkingData();
       } else {
-        // Intentar leer errores devueltos por el backend
         const errorData = await response.json().catch(() => null);
-        console.error('Error response from PUT /parkings/:', errorData);
-        // Formatear mensaje legible
-        let msg = 'Error actualizando estacionamiento';
+        console.error('❌ Error del servidor:', errorData);
+
+        let errorMessage = 'Error actualizando estacionamiento';
         if (errorData) {
-          if (errorData.detail) msg = errorData.detail;
-          else if (typeof errorData === 'object') {
-            // Convertir errores por campo a una cadena
-            const parts = [];
-            for (const k of Object.keys(errorData)) {
-              const v = errorData[k];
-              if (Array.isArray(v)) parts.push(`${k}: ${v.join('; ')}`);
-              else parts.push(`${k}: ${v}`);
+          if (errorData.detail) {
+            errorMessage = errorData.detail;
+          } else if (typeof errorData === 'object') {
+            // Procesar errores de validación por campo
+            const fieldErrors = [];
+            Object.keys(errorData).forEach(field => {
+              if (Array.isArray(errorData[field])) {
+                fieldErrors.push(`${field}: ${errorData[field].join(', ')}`);
+              } else {
+                fieldErrors.push(`${field}: ${errorData[field]}`);
+              }
+            });
+            if (fieldErrors.length > 0) {
+              errorMessage = fieldErrors.join('; ');
             }
-            if (parts.length) msg = parts.join(' | ');
-          } else if (typeof errorData === 'string') {
-            msg = errorData;
           }
         }
-        throw new Error(msg);
+
+        throw new Error(errorMessage);
       }
     } catch (error) {
-      console.error('Error actualizando parking:', error);
+      console.error('❌ Error actualizando parking:', error);
       showNotification(error.message || 'Error actualizando estacionamiento', 'error');
     }
+  };
+
+  // También mejora el manejo de servicios en el formulario de edición
+  const handleEditParkingChange = (e) => {
+    const { name, value, type, checked, files } = e.target;
+
+    if (type === 'checkbox') {
+      setEditParkingForm(prev => ({
+        ...prev,
+        servicios: checked
+          ? [...(prev.servicios || []), value]
+          : (prev.servicios || []).filter(service => service !== value)
+      }));
+      return;
+    }
+
+    if (type === 'file') {
+      const file = files && files[0] ? files[0] : null;
+      setEditParkingForm(prev => ({ ...prev, [name]: file }));
+      return;
+    }
+
+    setEditParkingForm(prev => ({ ...prev, [name]: value }));
   };
 
   // Resetear formulario de estacionamiento
@@ -387,11 +468,11 @@ const OwnerProfile = () => {
 
   const handleParkingInputChange = (e) => {
     const { name, value, type, checked } = e.target;
-    
+
     if (type === 'checkbox') {
       setParkingForm(prev => ({
         ...prev,
-        servicios: checked 
+        servicios: checked
           ? [...prev.servicios, value]
           : prev.servicios.filter(service => service !== value)
       }));
@@ -426,7 +507,7 @@ const OwnerProfile = () => {
     }
   };
 
-  
+
 
   const showNotification = (message, type) => {
     // Usar el sistema de notificaciones existente del dashboard
@@ -452,7 +533,7 @@ const OwnerProfile = () => {
         <span style="margin-left: 8px;">${message}</span>
       `;
       document.body.appendChild(notification);
-      
+
       setTimeout(() => {
         if (notification.parentNode) {
           notification.parentNode.removeChild(notification);
@@ -559,7 +640,7 @@ const OwnerProfile = () => {
             </div>
           </div>
         </div>
-        
+
         <div className="profile-stats-grid">
           <div className="stat-card primary">
             <div className="stat-icon">
@@ -570,7 +651,7 @@ const OwnerProfile = () => {
               <p>Estacionamientos</p>
             </div>
           </div>
-          
+
           <div className="stat-card secondary">
             <div className="stat-icon">
               <i className="fas fa-phone"></i>
@@ -580,7 +661,7 @@ const OwnerProfile = () => {
               <p>Teléfono</p>
             </div>
           </div>
-          
+
           <div className="stat-card success">
             <div className="stat-icon">
               <i className="fas fa-check-circle"></i>
@@ -590,7 +671,7 @@ const OwnerProfile = () => {
               <p>Aprobados</p>
             </div>
           </div>
-          
+
           <div className="stat-card warning">
             <div className="stat-icon">
               <i className="fas fa-clock"></i>
@@ -606,14 +687,14 @@ const OwnerProfile = () => {
       {/* Navegación por pestañas */}
       <div className="profile-tabs-container">
         <div className="profile-tabs">
-          <button 
+          <button
             className={`tab-button ${activeTab === 'info' ? 'active' : ''}`}
             onClick={() => setActiveTab('info')}
           >
             <i className="fas fa-user"></i>
             Información Personal
           </button>
-          <button 
+          <button
             className={`tab-button ${activeTab === 'parking' ? 'active' : ''}`}
             onClick={() => setActiveTab('parking')}
           >
@@ -623,7 +704,7 @@ const OwnerProfile = () => {
               <span className="tab-badge">{parkingData.length}</span>
             )}
           </button>
-          <button 
+          <button
             className={`tab-button ${activeTab === 'security' ? 'active' : ''}`}
             onClick={() => setActiveTab('security')}
           >
@@ -642,7 +723,7 @@ const OwnerProfile = () => {
                 <i className="fas fa-user-circle"></i>
                 <h2>Información Personal</h2>
               </div>
-              <button 
+              <button
                 className={`edit-btn ${editing ? 'cancel' : 'edit'}`}
                 onClick={() => setEditing(!editing)}
               >
@@ -743,7 +824,7 @@ const OwnerProfile = () => {
                       <p>{ownerData?.first_name} {ownerData?.last_name}</p>
                     </div>
                   </div>
-                  
+
                   <div className="info-card">
                     <div className="info-icon">
                       <i className="fas fa-envelope"></i>
@@ -753,7 +834,7 @@ const OwnerProfile = () => {
                       <p>{ownerData?.email}</p>
                     </div>
                   </div>
-                  
+
                   <div className="info-card">
                     <div className="info-icon">
                       <i className="fas fa-phone"></i>
@@ -763,7 +844,7 @@ const OwnerProfile = () => {
                       <p>{ownerData?.phone_number || 'No registrado'}</p>
                     </div>
                   </div>
-                  
+
                   <div className="info-card">
                     <div className="info-icon">
                       <i className="fas fa-map-marker-alt"></i>
@@ -773,22 +854,22 @@ const OwnerProfile = () => {
                       <p>{ownerData?.address || 'No registrada'}</p>
                     </div>
                   </div>
-                  
+
                   <div className="info-card">
                     <div className="info-icon">
                       <i className="fas fa-calendar-plus"></i>
                     </div>
                     <div className="info-content">
                       <label>Fecha de Registro</label>
-                      <p>{ownerData?.date_joined ? new Date(ownerData.date_joined).toLocaleDateString('es-ES', { 
-                        weekday: 'long', 
-                        year: 'numeric', 
-                        month: 'long', 
-                        day: 'numeric' 
+                      <p>{ownerData?.date_joined ? new Date(ownerData.date_joined).toLocaleDateString('es-ES', {
+                        weekday: 'long',
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric'
                       }) : 'N/A'}</p>
                     </div>
                   </div>
-                  
+
                   <div className="info-card">
                     <div className="info-icon">
                       <i className="fas fa-user-shield"></i>
@@ -819,7 +900,7 @@ const OwnerProfile = () => {
                   </span>
                 )}
               </div>
-              <button 
+              <button
                 className="add-parking-btn"
                 onClick={() => setShowParkingForm(true)}
               >
@@ -827,7 +908,7 @@ const OwnerProfile = () => {
                 Agregar Estacionamiento
               </button>
             </div>
-            
+
             {showParkingForm && (
               <div className="parking-form-modal">
                 <div className="modal-content">
@@ -836,7 +917,7 @@ const OwnerProfile = () => {
                       <i className="fas fa-plus-circle"></i>
                       Nuevo Estacionamiento
                     </h3>
-                    <button 
+                    <button
                       className="close-btn"
                       onClick={() => {
                         setShowParkingForm(false);
@@ -846,12 +927,12 @@ const OwnerProfile = () => {
                       <i className="fas fa-times"></i>
                     </button>
                   </div>
-                  
+
                   <form onSubmit={createParking} className="parking-form">
                     <div className="form-columns">
                       <div className="form-column">
                         <h4>Información Básica</h4>
-                        
+
                         <div className="form-group">
                           <label>
                             <i className="fas fa-signature"></i>
@@ -866,7 +947,7 @@ const OwnerProfile = () => {
                             placeholder="Ej: Estacionamiento Central"
                           />
                         </div>
-                        
+
                         <div className="form-group">
                           <label>
                             <i className="fas fa-map-marker-alt"></i>
@@ -881,7 +962,7 @@ const OwnerProfile = () => {
                             placeholder="Ej: Av. Principal #123, Ciudad"
                           />
                         </div>
-                        
+
                         <div className="form-group">
                           <label>
                             <i className="fas fa-map-pin"></i>
@@ -924,7 +1005,7 @@ const OwnerProfile = () => {
                           />
                           <small className="form-help">Puedes subir varias imágenes (JPG, PNG). Tamaño recomendado &lt; 5MB por imagen.</small>
                         </div>
-                        
+
                         <div className="form-group">
                           <label>
                             <i className="fas fa-phone"></i>
@@ -939,7 +1020,7 @@ const OwnerProfile = () => {
                             placeholder="+51 987 654 321"
                           />
                         </div>
-                        
+
                         <div className="form-group">
                           <label>
                             <i className="fas fa-align-left"></i>
@@ -954,10 +1035,10 @@ const OwnerProfile = () => {
                           />
                         </div>
                       </div>
-                      
+
                       <div className="form-column">
                         <h4>Configuración Operativa</h4>
-                        
+
                         <div className="form-row">
                           <div className="form-group">
                             <label>
@@ -973,7 +1054,7 @@ const OwnerProfile = () => {
                             />
                             <small className="form-help">Dejar vacío para 24 horas</small>
                           </div>
-                          
+
                           <div className="form-group">
                             <label>
                               <i className="fas fa-clock"></i>
@@ -989,7 +1070,7 @@ const OwnerProfile = () => {
                             <small className="form-help">Dejar vacío para 24 horas</small>
                           </div>
                         </div>
-                        
+
                         <div className="form-group">
                           <label>
                             <i className="fas fa-shield-alt"></i>
@@ -1008,7 +1089,7 @@ const OwnerProfile = () => {
                             ))}
                           </select>
                         </div>
-                        
+
                         <div className="form-group">
                           <label>
                             <i className="fas fa-money-bill-wave"></i>
@@ -1025,7 +1106,7 @@ const OwnerProfile = () => {
                             placeholder="5.00"
                           />
                         </div>
-                        
+
                         <div className="form-row">
                           <div className="form-group">
                             <label>
@@ -1042,7 +1123,7 @@ const OwnerProfile = () => {
                               placeholder="50"
                             />
                           </div>
-                          
+
                           <div className="form-group">
                             <label>
                               <i className="fas fa-car-side"></i>
@@ -1062,7 +1143,7 @@ const OwnerProfile = () => {
                         </div>
                       </div>
                     </div>
-                    
+
                     <div className="services-section">
                       <h4>
                         <i className="fas fa-concierge-bell"></i>
@@ -1083,10 +1164,10 @@ const OwnerProfile = () => {
                         ))}
                       </div>
                     </div>
-                    
+
                     <div className="form-actions">
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         className="cancel-btn"
                         onClick={() => {
                           setShowParkingForm(false);
@@ -1105,7 +1186,7 @@ const OwnerProfile = () => {
                 </div>
               </div>
             )}
-            
+
             {parkingData?.length > 0 ? (
               <div className="parking-grid">
                 {parkingData.map(parking => (
@@ -1132,7 +1213,7 @@ const OwnerProfile = () => {
                         <span>({parking.total_reseñas || 0})</span>
                       </div>
                     </div>
-                    
+
                     <div className="parking-info">
                       <div className="info-item">
                         <i className="fas fa-map-marker-alt"></i>
@@ -1153,12 +1234,12 @@ const OwnerProfile = () => {
                       <div className="info-item">
                         <i className="fas fa-clock"></i>
                         <span>
-                          Horario: {parking.horario_apertura ? formatTimeForDisplay(parking.horario_apertura) : '24'} - 
+                          Horario: {parking.horario_apertura ? formatTimeForDisplay(parking.horario_apertura) : '24'} -
                           {parking.horario_cierre ? formatTimeForDisplay(parking.horario_cierre) : '24'} horas
                         </span>
                       </div>
                     </div>
-                    
+
                     <div className="parking-actions">
                       <button className="action-btn edit" onClick={() => openEditParking(parking)}>
                         <i className="fas fa-edit"></i>
@@ -1181,7 +1262,7 @@ const OwnerProfile = () => {
                 <div className="empty-icon">🚗</div>
                 <h3>No tienes estacionamientos registrados</h3>
                 <p>Comienza agregando tu primer estacionamiento para gestionar tus espacios de parking</p>
-                <button 
+                <button
                   className="add-parking-btn primary"
                   onClick={() => setShowParkingForm(true)}
                 >
@@ -1309,7 +1390,7 @@ const OwnerProfile = () => {
                 <h2>Seguridad y Cuenta</h2>
               </div>
             </div>
-            
+
             <div className="security-sections">
               <div className="security-card">
                 <div className="security-icon">
@@ -1318,52 +1399,52 @@ const OwnerProfile = () => {
                 <div className="security-content">
                   <h3>Cambiar Contraseña</h3>
                   <p>Actualiza tu contraseña regularmente para mantener tu cuenta segura</p>
-                      {!showPasswordChange ? (
-                        <button className="security-btn primary" onClick={() => setShowPasswordChange(true)}>
-                          <i className="fas fa-sync-alt"></i>
-                          Cambiar Contraseña
-                        </button>
-                      ) : (
-                        <form className="password-change-form" onSubmit={submitChangePassword}>
-                          <div className="form-group">
-                            <label>Contraseña actual</label>
-                            <input
-                              type="password"
-                              name="old_password"
-                              value={passwordForm.old_password}
-                              onChange={handlePasswordInputChange}
-                              required
-                            />
-                          </div>
-                          <div className="form-group">
-                            <label>Nueva contraseña</label>
-                            <input
-                              type="password"
-                              name="new_password"
-                              value={passwordForm.new_password}
-                              onChange={handlePasswordInputChange}
-                              required
-                            />
-                          </div>
-                          <div className="form-group">
-                            <label>Confirmar nueva contraseña</label>
-                            <input
-                              type="password"
-                              name="confirm_password"
-                              value={passwordForm.confirm_password}
-                              onChange={handlePasswordInputChange}
-                              required
-                            />
-                          </div>
-                          <div className="form-actions">
-                            <button type="button" className="cancel-btn" onClick={() => setShowPasswordChange(false)}>Cancelar</button>
-                            <button type="submit" className="save-btn" disabled={changingPassword}>{changingPassword ? 'Guardando...' : 'Guardar'}</button>
-                          </div>
-                        </form>
-                      )}
+                  {!showPasswordChange ? (
+                    <button className="security-btn primary" onClick={() => setShowPasswordChange(true)}>
+                      <i className="fas fa-sync-alt"></i>
+                      Cambiar Contraseña
+                    </button>
+                  ) : (
+                    <form className="password-change-form" onSubmit={submitChangePassword}>
+                      <div className="form-group">
+                        <label>Contraseña actual</label>
+                        <input
+                          type="password"
+                          name="old_password"
+                          value={passwordForm.old_password}
+                          onChange={handlePasswordInputChange}
+                          required
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Nueva contraseña</label>
+                        <input
+                          type="password"
+                          name="new_password"
+                          value={passwordForm.new_password}
+                          onChange={handlePasswordInputChange}
+                          required
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>Confirmar nueva contraseña</label>
+                        <input
+                          type="password"
+                          name="confirm_password"
+                          value={passwordForm.confirm_password}
+                          onChange={handlePasswordInputChange}
+                          required
+                        />
+                      </div>
+                      <div className="form-actions">
+                        <button type="button" className="cancel-btn" onClick={() => setShowPasswordChange(false)}>Cancelar</button>
+                        <button type="submit" className="save-btn" disabled={changingPassword}>{changingPassword ? 'Guardando...' : 'Guardar'}</button>
+                      </div>
+                    </form>
+                  )}
                 </div>
               </div>
-              
+
               <div className="security-card">
                 <div className="security-icon">
                   <i className="fas fa-desktop"></i>
@@ -1377,7 +1458,7 @@ const OwnerProfile = () => {
                   </button>
                 </div>
               </div>
-              
+
               <div className="security-card warning">
                 <div className="security-icon">
                   <i className="fas fa-exclamation-triangle"></i>

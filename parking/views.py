@@ -11,6 +11,8 @@ from django.contrib.auth import get_user_model
 from datetime import timedelta, datetime
 import logging
 
+from analytic import serializers
+
 from .permissions import (
     IsAdminGeneral, IsOwner, IsAdminOrOwner, 
     IsOwnerOfParking, IsAdminOrOwnerOfParking, CanManageParkingApprovals
