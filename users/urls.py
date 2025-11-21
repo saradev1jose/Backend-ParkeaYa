@@ -4,7 +4,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     MyTokenObtainPairView, RegisterClientView, RegisterOwnerView,
     AdminUserViewSet, OwnerUserViewSet, ClientUserViewSet, CarViewSet,
-    admin_panel_login, get_user_profile, check_panel_access,
+    admin_panel_login, get_user_profile, update_user_profile, check_panel_access,  # ✅ Agregar update_user_profile
     admin_dashboard_stats, owner_dashboard_stats, client_dashboard_stats,
     change_own_password
 )
@@ -28,8 +28,13 @@ urlpatterns = [
     
     # Autenticación para panel web
     path('panel/login/', admin_panel_login, name='admin-panel-login'),
-    path('profile/', get_user_profile, name='user-profile'),
     path('panel/check-access/', check_panel_access, name='check-panel-access'),
+    
+    #  RUTAS ACTUALIZADAS PARA PERFIL
+    # Perfil - GET
+    path('profile/', get_user_profile, name='user-profile'),
+    # Actualizar perfil - PUT/PATCH
+    path('profile/update/', update_user_profile, name='user-profile-update'),
     
     # Dashboards por rol
     path('admin/dashboard/stats/', admin_dashboard_stats, name='admin-dashboard-stats'),
@@ -38,8 +43,16 @@ urlpatterns = [
     
     # Incluir las rutas del router
     path('', include(router.urls)),
+    
     # Cambiar contraseña (usuario autenticado)
     path('profile/change-password/', change_own_password, name='change-own-password'),
-    # En users/urls.py, agrega esta línea:
+    # Rutas de compatibilidad (legacy)
+    path('users/profile/', get_user_profile, name='user-profile-compat'),
+    # Compatibilidad UPDATE perfil
+    path('users/profile/update/', update_user_profile, name='user-profile-update-compat'),
+    # Compatibilidad cambiar contraseña
+    path('users/profile/change-password/', change_own_password, name='user-change-password-compat'),
+    
+    # Ruta específica para owner
     path('owner/me/', OwnerUserViewSet.as_view({'get': 'me', 'put': 'me'}), name='owner-me'),
 ]

@@ -15,6 +15,7 @@ from rest_framework.decorators import api_view, permission_classes, action
 from django.contrib.auth import authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.utils import timezone
+from datetime import datetime
 
 from django.db.models import Q  
 
@@ -55,7 +56,8 @@ class OwnerUserViewSet(UserViewSet):
     permission_classes = [permissions.IsAuthenticated, IsOwner]
 
     def get_queryset(self):
-        return User.objects.filter(Q(id=self.request.user.id) | Q(rol='cliente'))
+        return User.objects.filter(Q(id=self.request.user.id) | Q(rol='client'))  # ✅ Corregido: 'cliente' a 'client'
+    
     @action(detail=False, methods=['get', 'put'])
     def me(self, request):
         """Endpoint para obtener y actualizar el perfil del owner actual"""
@@ -72,9 +74,6 @@ class OwnerUserViewSet(UserViewSet):
 class ClientUserViewSet(UserViewSet):
     """Vista para clientes - Solo acceso a su propio perfil"""
     permission_classes = [permissions.IsAuthenticated, IsClient]
-
-    def get_queryset(self):
-        return User.objects.filter(id=self.request.user.id)
 
     def get_queryset(self):
         user = self.request.user
@@ -106,8 +105,12 @@ class ClientUserViewSet(UserViewSet):
     def perform_update(self, serializer):
         instance = serializer.instance
         if not self.request.user.is_superuser and not self.request.user.rol == 'admin':
-            # Usuarios normales solo pueden actualizar ciertos campos
-            allowed_fields = {'first_name', 'last_name', 'email', 'telefono'}
+            # ✅ ACTUALIZADO: Permitir actualizar todos los campos del perfil
+            allowed_fields = {
+                'first_name', 'last_name', 'email', 'telefono',
+                'tipo_documento', 'numero_documento', 'fecha_nacimiento',
+                'direccion', 'codigo_postal', 'pais'
+            }
             for field in serializer.validated_data.copy():
                 if field not in allowed_fields:
                     serializer.validated_data.pop(field)
@@ -228,24 +231,57 @@ def admin_panel_login(request):
             status=status.HTTP_401_UNAUTHORIZED
         )
 
+# ✅ NUEVA VISTA PARA ACTUALIZAR PERFIL
+@api_view(['PUT', 'PATCH'])
+@permission_classes([permissions.IsAuthenticated])
+def update_user_profile(request):
+    """Vista específica para actualizar el perfil del usuario"""
+    user = request.user
+    
+    # ✅ CAMPOS PERMITIDOS PARA ACTUALIZACIÓN
+    allowed_fields = {
+        'first_name', 'last_name', 'email', 'telefono',
+        'tipo_documento', 'numero_documento', 'fecha_nacimiento',
+        'direccion', 'codigo_postal', 'pais'
+    }
+    
+    # Filtrar datos
+    data = {k: v for k, v in request.data.items() if k in allowed_fields}
+    
+    # ✅ PROCESAR FECHA_NACIMIENTO SI VIENE EN FORMATO dd/mm/yyyy
+    if 'fecha_nacimiento' in data and data['fecha_nacimiento']:
+        try:
+            fecha_str = data['fecha_nacimiento']
+            # Intentar parsear formato dd/mm/yyyy
+            if '/' in fecha_str:
+                fecha_obj = datetime.strptime(fecha_str, '%d/%m/%Y').date()
+                data['fecha_nacimiento'] = fecha_obj
+            # Si ya viene en formato ISO (yyyy-mm-dd), dejarlo como está
+            elif '-' in fecha_str:
+                data['fecha_nacimiento'] = fecha_str
+        except ValueError as e:
+            return Response(
+                {'error': f'Formato de fecha inválido: {str(e)}. Use dd/mm/yyyy'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+    
+    # Usar el serializer para validar y aplicar cambios
+    serializer = UserSerializer(user, data=data, partial=True)
+    
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data)
+    
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
 @api_view(['GET'])
 @permission_classes([permissions.IsAuthenticated])
 def get_user_profile(request):
-    """Obtener perfil del usuario autenticado"""
+    """Obtener perfil del usuario actual - SOLO GET"""
     user = request.user
-    return Response({
-        'id': user.id,
-        'username': user.username,
-        'email': user.email,
-        'rol': user.rol,
-        'rol_display': user.get_rol_display(),
-        'first_name': user.first_name,
-        'last_name': user.last_name,
-        'telefono': user.telefono,
-        'is_admin': user.is_admin_general,
-        'is_owner': user.is_owner,
-        'is_client': user.is_client
-    })
+    
+    # ✅ USAR EL MÉTODO DEL MODELO PARA OBTENER DATOS COMPLETOS
+    return Response(user.obtener_perfil_completo())
 
 @api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
@@ -352,7 +388,6 @@ def change_own_password(request):
     if not user.check_password(old_password):
         return Response({'error': 'Contraseña actual incorrecta.'}, status=status.HTTP_400_BAD_REQUEST)
 
-    # Opcional: validar longitud mínima usando settings de Django; dejar que set_password maneje hashing
     user.set_password(new_password)
     user.save()
     return Response({'message': 'Contraseña actualizada correctamente'})
