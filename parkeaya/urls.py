@@ -77,4 +77,6 @@ urlpatterns = [
     path('api/dashboard/stats/', include('parking.urls')),  
     path('api/dashboard/recent-reservations/', include('reservations.urls')),  
     path('api/login/', TokenObtainPairView.as_view(), name='token_obtain_pair_legacy'),  
+
+    path('api/', include('vehicles.urls')),
 ]
