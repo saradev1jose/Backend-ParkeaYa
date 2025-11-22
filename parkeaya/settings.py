@@ -24,6 +24,7 @@ INSTALLED_APPS = [
     'reservations',
     'payments',
     'tickets',
+    'vehicles',
     # Autenticación con Gmail
     "django.contrib.sites",
     "dj_rest_auth",
@@ -116,9 +117,9 @@ WSGI_APPLICATION = 'parkeaya.wsgi.application'
 DATABASES = {
     'default': {
        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'parkeaya_db',
+        'NAME': 'parkeya_db',
         'USER': 'postgres',
-        'PASSWORD': '1234',
+        'PASSWORD': 'katherin859!',
         'HOST': 'localhost',
         'PORT': '5432',
     }
