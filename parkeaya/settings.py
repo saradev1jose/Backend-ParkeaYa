@@ -117,9 +117,9 @@ WSGI_APPLICATION = 'parkeaya.wsgi.application'
 DATABASES = {
     'default': {
        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'parkeya_db',
+        'NAME': 'parkeaya_db',
         'USER': 'postgres',
-        'PASSWORD': 'katherin859!',
+        'PASSWORD': '1234',
         'HOST': 'localhost',
         'PORT': '5432',
     }

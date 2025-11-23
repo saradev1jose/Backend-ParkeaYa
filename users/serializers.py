@@ -128,7 +128,12 @@ class UserSerializer(serializers.ModelSerializer):
 class AdminUserSerializer(UserSerializer):
     """Serializer para administradores (pueden ver todo)"""
     class Meta(UserSerializer.Meta):
+        # Administradores pueden modificar estados y permisos
         fields = UserSerializer.Meta.fields + ['is_staff', 'is_superuser', 'eliminado']
+        # Permitir que el admin actualice `is_active`, `activo`, `rol` y permisos.
+        read_only_fields = [
+            'fecha_registro', 'date_joined', 'last_login', 'edad', 'telefono_formateado'
+        ]
 
 class OwnerRegistrationSerializer(serializers.ModelSerializer):
     """Serializer específico para registro de dueños"""
