@@ -10,6 +10,7 @@ from django.views.decorators.cache import cache_page
 from django.contrib.auth import get_user_model
 from datetime import timedelta, datetime
 import logging
+import uuid
 
 from analytic import serializers
 
@@ -256,21 +257,40 @@ class ParkingLotViewSet(viewsets.ModelViewSet):
             return qs.filter(aprobado=True, activo=True)
 
     def perform_create(self, serializer):
-        """Asigna el dueño al crear estacionamiento - CORREGIDO"""
-        # Crear parking como NO aprobado por defecto
         parking = serializer.save(
             dueno=self.request.user,
-            aprobado=False,  # ← NO aprobado por defecto
-            activo=False     # ← NO activo hasta ser aprobado
+            aprobado=False, 
+            activo=False    
         )
 
-        # Crear solicitud de aprobación automáticamente
+        logger.info(f"Parking creado por user={self.request.user.id} parking_id={parking.id} aprobado={parking.aprobado} activo={parking.activo}")
+
+        # Crear solicitud de aprobación automáticamente para owners
         if self.request.user.is_owner:
-            ParkingApprovalRequest.objects.create(
-                solicitado_por=self.request.user,
-                estacionamiento_creado=parking,
-                status='PENDING'
-            )
+            try:
+                # Rellenar la solicitud con los datos del parking recién creado
+                panel_local = str(uuid.uuid4())
+                req = ParkingApprovalRequest.objects.create(
+                    nombre=parking.nombre,
+                    direccion=parking.direccion,
+                    coordenadas=parking.coordenadas or '',
+                    telefono=parking.telefono or '',
+                    descripcion=parking.descripcion or '',
+                    horario_apertura=parking.horario_apertura,
+                    horario_cierre=parking.horario_cierre,
+                    nivel_seguridad=parking.nivel_seguridad,
+                    tarifa_hora=parking.tarifa_hora,
+                    total_plazas=parking.total_plazas,
+                    plazas_disponibles=parking.plazas_disponibles,
+                    servicios=[],
+                    panel_local_id=panel_local,
+                    status='PENDING',
+                    solicitado_por=self.request.user,
+                    estacionamiento_creado=parking
+                )
+                logger.info(f"ParkingApprovalRequest creado id={req.id} for parking_id={parking.id} panel_local_id={panel_local}")
+            except Exception as e:
+                logger.exception(f"Error creando ParkingApprovalRequest automáticamente: {e}")
 
     @action(detail=False, methods=['get'])
     def mis_estacionamientos(self, request):

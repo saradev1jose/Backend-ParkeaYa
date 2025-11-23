@@ -48,6 +48,21 @@ const AdminParking = ({ userRole }) => {
           // Manejar tanto array como objeto con results
           allParkings = Array.isArray(data) ? data : (data.results || []);
           console.log('✅ Parkings cargados:', allParkings.length);
+          // Cargar siempre las approval requests y mezclarlas con la lista principal
+          try {
+            const approvalRequests = await loadApprovalRequests();
+            if (approvalRequests.length > 0) {
+              // Evitar duplicados por id (si estacionamiento_creado coincide con ParkingLot id)
+              const map = {};
+              // primero las approval requests (pendientes) para mostrarlas arriba
+              approvalRequests.forEach(p => { map[String(p.id)] = p; });
+              allParkings.forEach(p => { map[String(p.id)] = p; });
+              allParkings = Object.values(map);
+              console.log('ℹ️ Parkings combinado con approval requests:', allParkings.length);
+            }
+          } catch (e) {
+            console.warn('No se pudieron fusionar approval requests:', e);
+          }
         } else {
           console.warn('❌ Error cargando parkings principales:', response.status);
         }
@@ -78,15 +93,15 @@ const AdminParking = ({ userRole }) => {
     let combinedParkings = [];
 
     try {
-      // CARGAR PARKINGS PENDIENTES
-      const pendingResponse = await fetch(`${API_BASE}/parking/admin-pending-parkings/`, {
+      // CARGAR PARKINGS PENDIENTES (endpoint corregido)
+      const pendingResponse = await fetch(`${API_BASE}/parking/admin/pending-parkings/`, {
         headers: getAuthHeaders()
       });
 
       if (pendingResponse.ok) {
         const pendingData = await pendingResponse.json();
         const pendingWithStatus = Array.isArray(pendingData)
-          ? pendingData.map(p => ({ ...p, status: 'pending' }))
+          ? pendingData.map(p => ({ ...p, status: 'pending', isApprovalRequest: false }))
           : [];
         combinedParkings = [...combinedParkings, ...pendingWithStatus];
         console.log('✅ Pendientes cargados:', pendingWithStatus.length);
@@ -96,24 +111,66 @@ const AdminParking = ({ userRole }) => {
     }
 
     try {
-      // CARGAR PARKINGS APROBADOS
-      const approvedResponse = await fetch(`${API_BASE}/parking/admin-approved-parkings/`, {
+      // CARGAR PARKINGS APROBADOS (endpoint corregido)
+      const approvedResponse = await fetch(`${API_BASE}/parking/admin/approved-parkings/`, {
         headers: getAuthHeaders()
       });
 
       if (approvedResponse.ok) {
         const approvedData = await approvedResponse.json();
         const approvedWithStatus = Array.isArray(approvedData)
-          ? approvedData.map(p => ({ ...p, status: 'active' }))
+          ? approvedData.map(p => ({ ...p, status: 'active', isApprovalRequest: false }))
           : [];
         combinedParkings = [...combinedParkings, ...approvedWithStatus];
         console.log('✅ Aprobados cargados:', approvedWithStatus.length);
       }
+
+    // También cargar approval requests (si el owner envía requests en vez de crear ParkingLot)
+    try {
+      const approvalRequests = await loadApprovalRequests();
+      if (approvalRequests.length > 0) {
+        combinedParkings = [...approvalRequests, ...combinedParkings];
+        console.log('✅ Approval requests cargadas:', approvalRequests.length);
+      }
+    } catch (e) {
+      console.warn('No se pudieron cargar approval requests en loadFromSpecificEndpoints:', e);
+    }
     } catch (error) {
       console.error('Error cargando aprobados:', error);
     }
 
     return combinedParkings;
+  };
+
+  // Intentar también cargar solicitudes de aprobación (por si la app local usa ApprovalRequest)
+  const loadApprovalRequests = async () => {
+    try {
+      const resp = await fetch(`${API_BASE}/parking/approval/requests/pendientes/`, {
+        headers: getAuthHeaders()
+      });
+      if (resp.ok) {
+          const data = await resp.json();
+          const mapped = Array.isArray(data) ? data.map(r => ({
+            // Use estacionamiento_creado id when available, otherwise unique req id
+            id: r.estacionamiento_creado ? r.estacionamiento_creado : `req-${r.id}`,
+            approvalRequestId: r.id,
+            estacionamiento_creado_id: r.estacionamiento_creado,
+            nombre: r.nombre,
+            direccion: r.direccion,
+            tarifa_hora: r.tarifa_hora,
+            total_plazas: r.total_plazas,
+            plazas_disponibles: r.plazas_disponibles,
+            propietario: r.solicitado_por ? { id: r.solicitado_por, username: r.solicitado_por_nombre } : null,
+            status: 'pending',
+            isApprovalRequest: true,
+            panel_local_id: r.panel_local_id
+          })) : [];
+          return mapped;
+        }
+    } catch (e) {
+      console.warn('No se pudo cargar approval requests:', e);
+    }
+    return [];
   };
 
   // Aprobar estacionamiento - ENDPOINTS CORREGIDOS
@@ -127,7 +184,10 @@ const AdminParking = ({ userRole }) => {
       let endpoint;
 
       // DETERMINAR ENDPOINT CORRECTO
-      if (parking.status === 'pending' || !parking.aprobado) {
+      if (parking.isApprovalRequest) {
+        // Es una solicitud de aprobación enviada por el owner
+        endpoint = `${API_BASE}/parking/approval/requests/${parking.approvalRequestId}/aprobar/`;
+      } else if (parking.status === 'pending' || !parking.aprobado) {
         // Parking pendiente - usar endpoint de aprobación
         endpoint = `${API_BASE}/parking/parkings/${parkingId}/approve/`;
       } else {
@@ -179,6 +239,21 @@ const AdminParking = ({ userRole }) => {
         activo: true
       };
 
+      if (parking.isApprovalRequest) {
+        // Si es una solicitud, intentar endpoint de aprobar solicitud
+        const resp = await fetch(`${API_BASE}/parking/approval/requests/${parking.approvalRequestId}/aprobar/`, {
+          method: 'POST',
+          headers: getAuthHeaders()
+        });
+        if (resp.ok) {
+          console.log('✅ Aprobada solicitud mediante endpoint de aprobar');
+          showNotification('Solicitud aprobada correctamente', 'success');
+          await loadParkings();
+          return true;
+        }
+        return false;
+      }
+
       const patchResponse = await fetch(`${API_BASE}/parking/parkings/${parkingId}/`, {
         method: 'PATCH',
         headers: getAuthHeaders(),
@@ -211,7 +286,12 @@ const AdminParking = ({ userRole }) => {
       console.log(`🔄 Rechazando parking ${parkingId}...`);
 
       // Usar endpoint de rechazo
-      const endpoint = `${API_BASE}/parking/parkings/${parkingId}/reject/`;
+      let endpoint;
+      if (parking.isApprovalRequest) {
+        endpoint = `${API_BASE}/parking/approval/requests/${parking.approvalRequestId}/rechazar/`;
+      } else {
+        endpoint = `${API_BASE}/parking/parkings/${parkingId}/reject/`;
+      }
 
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -248,6 +328,24 @@ const AdminParking = ({ userRole }) => {
   const tryAlternativeReject = async (parkingId) => {
     try {
       console.log('🔄 Intentando eliminar parking...');
+
+      // Si es una approval request, intentar rechazarla vía API
+      // parkingId may be like 'req-<id>' when mapped; try to detect
+      if (typeof parkingId === 'string' && parkingId.startsWith('req-')) {
+        const reqId = parkingId.replace('req-', '');
+        const resp = await fetch(`${API_BASE}/parking/approval/requests/${reqId}/rechazar/`, {
+          method: 'POST',
+          headers: getAuthHeaders(),
+          body: JSON.stringify({ motivo: 'Rechazo desde panel admin' })
+        });
+        if (resp.ok) {
+          console.log('✅ Solicitud de approval rechazada');
+          showNotification('Solicitud rechazada correctamente', 'success');
+          await loadParkings();
+          return true;
+        }
+        return false;
+      }
 
       const deleteResponse = await fetch(`${API_BASE}/parking/parkings/${parkingId}/`, {
         method: 'DELETE',
