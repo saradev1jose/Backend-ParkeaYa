@@ -49,9 +49,5 @@ urlpatterns = [
     # Endpoints específicos para owners
     path('my-parkings/', ParkingLotViewSet.as_view({'get': 'mis_estacionamientos'}), name='my-parkings'),
 
-    # ✅ CORREGIDO: Eliminar esta línea duplicada o usar importación directa
-    # path('api/parkings/', views.ParkingLotViewSet.as_view({'get': 'list'}), name='parkings-list'),
-    
-    # ✅ O si quieres mantenerla, usa la importación directa:
     path('api/parkings/', ParkingLotViewSet.as_view({'get': 'list'}), name='parkings-list'),
 ]

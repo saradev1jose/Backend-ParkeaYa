@@ -30,6 +30,8 @@ const OwnerReservations = ({ userRole }) => {
     loadReservationStats();
   }, [filters.status, filters.date]);
 
+  
+
   const loadReservations = async () => {
     try {
       setLoading(true);
@@ -56,17 +58,63 @@ const OwnerReservations = ({ userRole }) => {
       if (response.ok) {
         const data = await response.json();
         console.log('✅ Reservas cargadas:', data);
-        
-        // Adaptar según la estructura de tu API
-        if (Array.isArray(data)) {
-          setReservations(data);
-        } else if (data.results) {
-          setReservations(data.results);
-        } else if (data.reservations) {
-          setReservations(data.reservations);
-        } else {
-          setReservations(data.data || []);
-        }
+
+        // Extraer array según estructura de la API
+        let items = [];
+        if (Array.isArray(data)) items = data;
+        else if (data.results) items = data.results;
+        else if (data.reservations) items = data.reservations;
+        else items = data.data || [];
+
+        // Normalizar cada reserva para que la UI use campos consistentes
+        const normalize = (r) => {
+          // usuario puede venir en varios campos: usuario_info, user, usuario
+          const usuario = r.usuario_info || r.user || r.usuario || r.usuario_info;
+
+          // vehiculo info
+          const veh = r.vehiculo_info || r.vehicle || r.vehicle_info || {};
+
+          // montos y tiempos
+          const amount = r.costo_estimado != null ? Number(r.costo_estimado) : (r.amount != null ? Number(r.amount) : 0);
+          const start_time = r.hora_entrada || r.start_time || r.entrada || r.check_in_time || null;
+          const end_time = r.hora_salida || r.end_time || r.salida || null;
+
+          // estado mapping: backend usa español (activa, finalizada, cancelada)
+          const mapStatus = (s) => {
+            if (!s) return s;
+            const lower = String(s).toLowerCase();
+            if (['activa','active','in_progress'].includes(lower)) return 'active';
+            if (['proxima','proximo','upcoming','confirmed','confirmada'].includes(lower)) return 'upcoming';
+            if (['finalizada','finished','completed'].includes(lower)) return 'completed';
+            if (['cancelada','cancelled'].includes(lower)) return 'cancelled';
+            return lower;
+          };
+
+          const normalized = {
+            // keep original
+            ...r,
+            // normalized fields used by UI
+            user: usuario || null,
+            phone: (usuario && (usuario.telefono_formateado || usuario.telefono)) || r.phone || r.telefono || null,
+            vehicle_plate: veh.placa || r.vehicle_plate || r.placa || null,
+            vehicle_model: veh.modelo || r.vehicle_model || r.modelo || null,
+            start_time: start_time,
+            end_time: end_time,
+            actual_start_time: r.actual_start_time || r.check_in_time || null,
+            actual_end_time: r.actual_end_time || r.check_out_time || null,
+            amount: amount,
+            status: mapStatus(r.estado || r.status),
+            payment_status: r.payment_status || r.estado_pago || r.payment || null,
+            payment_method: r.payment_method || r.metodo_pago || null,
+            parking_spot: r.parking_spot || r.spot || r.estacionamiento || null,
+            spot_number: (r.parking_spot && r.parking_spot.number) || r.spot_number || (r.estacionamiento && r.estacionamiento.nombre) || null
+          };
+
+          return normalized;
+        };
+
+        const normalizedItems = items.map(normalize);
+        setReservations(normalizedItems);
       } else {
         const errorText = await response.text();
         console.error('❌ Error en respuesta:', errorText);
@@ -233,15 +281,16 @@ const OwnerReservations = ({ userRole }) => {
   });
 
   const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('es-CO', {
+    const value = Number(amount || 0);
+    return new Intl.NumberFormat('es-PE', {
       style: 'currency',
-      currency: 'COP'
-    }).format(amount || 0);
+      currency: 'PEN'
+    }).format(value);
   };
 
   const formatDateTime = (dateString) => {
     if (!dateString) return '--/--/---- --:--';
-    return new Date(dateString).toLocaleString('es-CO', {
+    return new Date(dateString).toLocaleString('es-PE', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -269,7 +318,7 @@ const OwnerReservations = ({ userRole }) => {
       in_progress: { label: 'En Progreso', class: 'status-active', icon: 'fas fa-play-circle' },
       finished: { label: 'Finalizada', class: 'status-completed', icon: 'fas fa-check-circle' }
     };
-    return statuses[status] || { label: status, class: 'status-unknown', icon: 'fas fa-question-circle' };
+    return statuses[status] || { label: status || 'Desconocido', class: 'status-unknown', icon: '' };
   };
 
   const getPaymentStatusBadge = (status) => {
@@ -280,7 +329,7 @@ const OwnerReservations = ({ userRole }) => {
       refunded: { label: 'Reembolsado', class: 'payment-refunded', icon: 'fas fa-undo' },
       partially_paid: { label: 'Pago Parcial', class: 'payment-partial', icon: 'fas fa-exclamation-circle' }
     };
-    return statuses[status] || { label: status, class: 'payment-unknown', icon: 'fas fa-question' };
+    return statuses[status] || { label: status || 'No especificado', class: 'payment-unknown', icon: '' };
   };
 
   const calculateDuration = (start, end) => {
@@ -309,6 +358,7 @@ const OwnerReservations = ({ userRole }) => {
 
   return (
     <div className="owner-reservations">
+      {/* API banner removed per user request */}
       {/* 🔥 HEADER */}
       <div className="owner-reservations-header">
         <div className="header-content">
@@ -445,6 +495,8 @@ const OwnerReservations = ({ userRole }) => {
           </div>
         )}
 
+        {/* Encabezado eliminado: las tarjetas muestran la información ordenada internamente */}
+
         {filteredReservations.map(reservation => {
           const statusInfo = getStatusBadge(reservation.status);
           const paymentInfo = getPaymentStatusBadge(reservation.payment_status);
@@ -464,11 +516,11 @@ const OwnerReservations = ({ userRole }) => {
                   
                   <div className="reservation-badges">
                     <span className={`status-badge ${statusInfo.class}`}>
-                      <i className={statusInfo.icon}></i>
+                      {statusInfo.icon && <i className={statusInfo.icon}></i>}
                       {statusInfo.label}
                     </span>
                     <span className={`payment-badge ${paymentInfo.class}`}>
-                      <i className={paymentInfo.icon}></i>
+                      {paymentInfo.icon && <i className={paymentInfo.icon}></i>}
                       {paymentInfo.label}
                     </span>
                   </div>
@@ -663,6 +715,9 @@ const OwnerReservations = ({ userRole }) => {
                   <div className="detail-item">
                     <strong>Pago:</strong>
                     <span className={`payment-badge ${getPaymentStatusBadge(viewModal.payment_status).class}`}>
+                      {getPaymentStatusBadge(viewModal.payment_status).icon && (
+                        <i className={getPaymentStatusBadge(viewModal.payment_status).icon}></i>
+                      )}
                       {getPaymentStatusBadge(viewModal.payment_status).label}
                     </span>
                   </div>

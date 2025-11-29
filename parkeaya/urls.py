@@ -48,6 +48,8 @@ urlpatterns = [
     path('api/analytics/', include('analytic.urls')),
 
     path('api/', include(router.urls)),
+    # Compatibilidad: ruta singular usada por cliente Android antiguo
+    path('api/reservation/', ReservationViewSet.as_view({'post': 'create'})),
     
 
      path('api/', include('parking.urls')),    

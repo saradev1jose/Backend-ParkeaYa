@@ -3,9 +3,11 @@ from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.authentication import SessionAuthentication, BasicAuthentication
+from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.db import transaction
 from django.utils import timezone
-from datetime import timedelta
+from datetime import timedelta, datetime
 from django.shortcuts import get_object_or_404
 from decimal import Decimal
 from django.db.models import Count, Q
@@ -25,6 +27,46 @@ from .serializers import (
 )
 from parking.models import ParkingLot
 from users.models import Car
+from django.shortcuts import render, redirect
+from django.conf import settings
+
+# ----------------------------
+# VISTAS PARA WEBVIEW MÓVIL
+# ----------------------------
+
+
+def mobile_login_via_token(request):
+    """
+    Endpoint simple para que la app WebView pueda pasar un token JWT
+    en la URL y se establezca como cookie para las siguientes peticiones.
+
+    Uso: /api/reservations/mobile/login/?token=<JWT>&next=/api/reservations/mobile/reservas/
+    """
+    token = request.GET.get('token')
+    next_url = request.GET.get('next') or '/api/reservations/mobile/reservas/'
+
+    response = redirect(next_url)
+    if token:
+        cookie_name = getattr(settings, 'REST_AUTH', {}).get('JWT_AUTH_COOKIE', 'jwt-auth')
+        # Poner cookie no HttpOnly para que JS en WebView pueda leerla y añadir Authorization header
+        response.set_cookie(cookie_name, token, httponly=False)
+    return response
+
+
+def mobile_reservas_page(request):
+    """Renderiza la pantalla de reservas para WebView.
+    La plantilla consumirá la API REST (`/api/reservations/client/mis-reservas/`).
+    """
+    return render(request, 'reservations/mobile_reservas.html')
+
+
+def mobile_pago_page(request):
+    """Renderiza la pantalla de pago para WebView.
+
+    Espera `?reserva=<uuid>` para preseleccionar la reserva.
+    """
+    reserva_id = request.GET.get('reserva')
+    return render(request, 'reservations/mobile_pago.html', {'reserva_id': reserva_id})
 
 # =============================================================================
 # VISTA PRINCIPAL DE RESERVAS
@@ -32,9 +74,20 @@ from users.models import Car
 
 class ReservationViewSet(viewsets.ModelViewSet):
     """Vista principal de reservas - Comportamiento diferenciado por rol"""
+    # Asegurar que el ViewSet acepte tokens JWT además de autenticación por sesión
+    authentication_classes = [JWTAuthentication, SessionAuthentication, BasicAuthentication]
+    permission_classes = [permissions.IsAuthenticated]
+
     queryset = Reservation.objects.all().select_related(
         'usuario', 'vehiculo', 'estacionamiento'
     ).order_by('-created_at')
+    
+    @action(detail=False, methods=['get', 'post', 'put', 'patch', 'delete'])
+    def reservations(self, request):
+        if request.method == 'GET':
+            return self.list(request)
+        elif request.method == 'POST':
+            return self.create(request)
     
     def get_serializer_class(self):
         """Selecciona serializer según el rol del usuario"""
@@ -44,17 +97,14 @@ class ReservationViewSet(viewsets.ModelViewSet):
             return ReservationDetailSerializer
             
         if user.is_admin_general:
-            if self.action in ['retrieve', 'list']:
-                return ReservationAdminSerializer
             return ReservationAdminSerializer
         elif user.is_owner:
-            if self.action in ['retrieve', 'list']:
-                return ReservationOwnerSerializer
             return ReservationOwnerSerializer
         else:
-            if self.action in ['retrieve', 'list']:
-                return ReservationDetailSerializer
-            return ReservationClientSerializer
+            # PARA CLIENTES: Usar ReservationClientSerializer para CREATE
+            if self.action == 'create':
+                return ReservationClientSerializer
+            return ReservationDetailSerializer
 
     def get_queryset(self):
         """Filtra reservas según el rol del usuario"""
@@ -64,21 +114,19 @@ class ReservationViewSet(viewsets.ModelViewSet):
             return Reservation.objects.none()
             
         if user.is_admin_general:
-            # Admin ve todas las reservas
             return self.queryset
         elif user.is_owner:
-            # Owner ve reservas de sus estacionamientos
             return self.queryset.filter(estacionamiento__dueno=user)
         else:
-            # Client ve solo sus reservas
             return self.queryset.filter(usuario=user)
 
     def get_permissions(self):
-        """Configura permisos según la acción y rol"""
+        """Configura permisos según la acción y rol - CORREGIDO"""
         if self.action in ['list', 'retrieve', 'tipos_reserva']:
             permission_classes = [permissions.IsAuthenticated]
-        elif self.action in ['create']:
-            permission_classes = [permissions.IsAuthenticated, IsClient]
+        elif self.action == 'create':
+            # ✅ PERMITIR POST A TODOS LOS USUARIOS AUTENTICADOS
+            permission_classes = [permissions.IsAuthenticated]
         elif self.action in ['update', 'partial_update', 'destroy', 'cancel', 'extend']:
             permission_classes = [permissions.IsAuthenticated, IsAdminOrOwnerOfReservation]
         else:
@@ -89,14 +137,14 @@ class ReservationViewSet(viewsets.ModelViewSet):
     @transaction.atomic
     def create(self, request, *args, **kwargs):
         """
-        Crear reserva - Solo para clientes
+        Crear reserva - PARA TODOS LOS USUARIOS AUTENTICADOS
         """
-        # Verificar que el usuario es cliente
-        if not request.user.is_client:
-            return Response(
-                {'detail': 'Solo los clientes pueden crear reservas.'},
-                status=status.HTTP_403_FORBIDDEN
-            )
+        # ✅ ELIMINAR esta validación que bloquea a no-clientes
+        # if not request.user.is_client:
+        #     return Response(
+        #         {'detail': 'Solo los clientes pueden crear reservas.'},
+        #         status=status.HTTP_403_FORBIDDEN
+        #     )
 
         data = request.data.copy()
         user = request.user
@@ -107,21 +155,59 @@ class ReservationViewSet(viewsets.ModelViewSet):
         duracion_minutos = int(data.get('duracion_minutos', 60))
         tipo_reserva = data.get('tipo_reserva', 'hora')
 
-        # Validaciones básicas
-        if not all([vehiculo_id, estacionamiento_id, hora_entrada]):
-            return Response(
-                {'detail': 'vehiculo, estacionamiento y hora_entrada son requeridos.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+        # Validaciones básicas -> devolver errores por campo para el cliente
+        errors = {}
+        if not vehiculo_id:
+            errors['vehiculo'] = ['Este campo es requerido.']
+        if not estacionamiento_id:
+            errors['estacionamiento'] = ['Este campo es requerido.']
+        if not hora_entrada:
+            errors['hora_entrada'] = ['Este campo es requerido.']
+        if errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
 
-        # Verificar que el vehículo pertenece al usuario
         try:
             vehiculo = Car.objects.get(id=vehiculo_id, usuario=user)
         except Car.DoesNotExist:
-            return Response(
-                {'detail': 'Vehículo no encontrado o no pertenece al usuario.'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            # Intentar resolver contra la app `vehicles` (compatibilidad con cliente Android)
+            external_list = []
+            try:
+                from vehicles.models import Vehicle as ExternalVehicle
+                try:
+                    ext = ExternalVehicle.objects.get(id=vehiculo_id, usuario=user)
+                except ExternalVehicle.DoesNotExist:
+                    # Lista de vehículos en users y en la app vehicles para ayudar al cliente
+                    user_cars = list(Car.objects.filter(usuario=user).values('id', 'placa'))
+                    external_list = list(ExternalVehicle.objects.filter(usuario=user).values('id', 'placa'))
+                    return Response(
+                        {
+                            'vehiculo': ['Vehículo no encontrado o no pertenece al usuario.'],
+                            'user_vehiculos': user_cars,
+                            'user_vehicles_external': external_list
+                        },
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                # Si encontramos un ExternalVehicle válido, crear o reutilizar un Car en users
+                vehiculo, created = Car.objects.get_or_create(
+                    placa=ext.placa,
+                    defaults={
+                        'usuario': user,
+                        'modelo': getattr(ext, 'modelo', ''),
+                        'tipo': 'auto',
+                        'color': getattr(ext, 'color', '')
+                    }
+                )
+            except Exception:
+                # Si no existe la app `vehicles` o hubo otro error, devolver solo los cars de users
+                user_cars = list(Car.objects.filter(usuario=user).values('id', 'placa'))
+                return Response(
+                    {
+                        'vehiculo': ['Vehículo no encontrado o no pertenece al usuario.'],
+                        'user_vehiculos': user_cars
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
         # Bloquear estacionamiento para evitar overbooking
         try:
@@ -132,14 +218,14 @@ class ReservationViewSet(viewsets.ModelViewSet):
             )
         except ParkingLot.DoesNotExist:
             return Response(
-                {'detail': 'Estacionamiento no disponible.'},
+                {'estacionamiento': ['Estacionamiento no disponible.']},
                 status=status.HTTP_404_NOT_FOUND
             )
 
         # Verificar disponibilidad
         if parking.plazas_disponibles <= 0:
             return Response(
-                {'detail': 'No hay plazas disponibles en este momento.'},
+                {'estacionamiento': ['No hay plazas disponibles en este momento.']},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -147,48 +233,68 @@ class ReservationViewSet(viewsets.ModelViewSet):
         try:
             from django.utils.dateparse import parse_datetime
             entrada_dt = parse_datetime(hora_entrada)
+
+            # Fallback: aceptar formatos comunes (espacio y T)
             if entrada_dt is None:
-                raise ValueError
-                
+                try:
+                    entrada_dt = datetime.strptime(hora_entrada, "%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    try:
+                        entrada_dt = datetime.strptime(hora_entrada, "%Y-%m-%dT%H:%M:%S")
+                    except Exception:
+                        entrada_dt = None
+
+            if entrada_dt is None:
+                raise ValueError("invalid datetime")
+
+            # Normalizar a timezone-aware si es naive (asumir UTC)
+            if entrada_dt.tzinfo is None:
+                from django.utils.timezone import make_aware
+                try:
+                    entrada_dt = make_aware(entrada_dt)
+                except Exception:
+                    # si no se puede hacer aware, dejar como está y comparar en UTC
+                    pass
+
             # Verificar que la reserva no sea en el pasado
             if entrada_dt < timezone.now():
                 return Response(
-                    {'detail': 'No se pueden hacer reservas en el pasado.'},
+                    {'hora_entrada': ['No se pueden hacer reservas en el pasado.']},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-                
-        except Exception:
+
+        except ValueError:
             return Response(
-                {'detail': 'Formato de hora_entrada inválido. Use formato ISO.'},
+                {'hora_entrada': ['Formato de hora_entrada inválido. Use formato ISO (ej: 2025-11-29T04:30:00 o 2025-11-29 04:30:00).']},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         # Validar tipo de reserva
         if tipo_reserva == 'dia' and not hasattr(parking, 'precio_dia'):
             return Response(
-                {'detail': 'Este estacionamiento no acepta reservas por día.'},
+                {'tipo_reserva': ['Este estacionamiento no acepta reservas por día.']},
                 status=status.HTTP_400_BAD_REQUEST
             )
         elif tipo_reserva == 'mes' and not hasattr(parking, 'precio_mes'):
             return Response(
-                {'detail': 'Este estacionamiento no acepta reservas por mes.'},
+                {'tipo_reserva': ['Este estacionamiento no acepta reservas por mes.']},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         # Validar duración mínima según tipo de reserva
         if tipo_reserva == 'hora' and duracion_minutos < 60:
             return Response(
-                {'detail': 'La duración mínima para reserva por hora es 60 minutos.'},
+                {'duracion_minutos': ['La duración mínima para reserva por hora es 60 minutos.']},
                 status=status.HTTP_400_BAD_REQUEST
             )
         elif tipo_reserva == 'dia' and duracion_minutos < 1440:
             return Response(
-                {'detail': 'La duración mínima para reserva por día es 24 horas.'},
+                {'duracion_minutos': ['La duración mínima para reserva por día es 24 horas.']},
                 status=status.HTTP_400_BAD_REQUEST
             )
         elif tipo_reserva == 'mes' and duracion_minutos < 43200:
             return Response(
-                {'detail': 'La duración mínima para reserva por mes es 30 días.'},
+                {'duracion_minutos': ['La duración mínima para reserva por mes es 30 días.']},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -203,7 +309,7 @@ class ReservationViewSet(viewsets.ModelViewSet):
         
         if reservas_conflicto.exists():
             return Response(
-                {'detail': 'El vehículo ya tiene una reserva en ese horario.'},
+                {'non_field_errors': ['El vehículo ya tiene una reserva en ese horario.']},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -382,8 +488,8 @@ class CheckInView(APIView):
             'detail': 'Check-in realizado exitosamente.',
             'reserva': ReservationDetailSerializer(reservation).data
         }
-        serializer = CheckInResponseSerializer(response_data)
-        return Response(serializer.data)
+        # Devolver directamente el dict serializado para evitar doble-serialización
+        return Response(response_data)
 
 class CheckOutView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsAdminOrOwnerOfReservation]
@@ -434,8 +540,8 @@ class CheckOutView(APIView):
             'tipo_reserva': reservation.tipo_reserva,
             'reserva': ReservationDetailSerializer(reservation).data
         }
-        serializer = CheckOutResponseSerializer(response_data)
-        return Response(serializer.data)
+        # Devolver directamente el dict serializado para evitar errores en nested fields
+        return Response(response_data)
 
 class UserActiveReservationsView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsClient]

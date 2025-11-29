@@ -10,9 +10,13 @@ from .views import (
     admin_reservations_stats,
     owner_reservations_stats
 )
+from .views import mobile_login_via_token, mobile_reservas_page, mobile_pago_page
 
 router = DefaultRouter()
-router.register(r'reservations', ReservationViewSet, basename='reservation')
+# Registrar el ViewSet en el router con prefijo vacío para que, al incluirse
+# en `path('api/reservations/', include(...))` en el archivo principal,
+# las rutas queden en `/api/reservations/` (en vez de `/api/reservations/reservations/`).
+router.register(r'', ReservationViewSet, basename='reservation')
 
 urlpatterns = [
     path('', include(router.urls)),
@@ -48,4 +52,9 @@ urlpatterns = [
     path('owner/reservas/', 
          ReservationViewSet.as_view({'get': 'reservas_estacionamiento'}), 
          name='reservas-estacionamiento'),
+
+    # Páginas para WebView móvil
+    path('mobile/login/', mobile_login_via_token, name='mobile-login'),
+    path('mobile/reservas/', mobile_reservas_page, name='mobile-reservas'),
+    path('mobile/pago/', mobile_pago_page, name='mobile-pago'),
 ]

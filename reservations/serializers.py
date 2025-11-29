@@ -119,7 +119,7 @@ class ReservationClientSerializer(ReservationBaseSerializer):
         costo_estimado = estacionamiento.calcular_costo_reserva(
             tipo_reserva=tipo_reserva,
             duracion_minutos=duracion_minutos,
-            tipo_vehiculo=vehiculo.tipo_vehiculo
+            tipo_vehiculo=vehiculo.tipo
         )
         validated_data['costo_estimado'] = costo_estimado
 
