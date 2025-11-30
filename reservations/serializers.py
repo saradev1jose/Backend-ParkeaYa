@@ -9,6 +9,7 @@ from users.models import Car
 from parking.models import ParkingLot
 from users.serializers import CarSerializer, UserSerializer
 from parking.serializers import ParkingLotSerializer
+from payments.serializers import PaymentSerializer  # ✅ AGREGAR esta importación
 
 # ----------------------------
 # Serializers Base
@@ -23,17 +24,21 @@ class ReservationBaseSerializer(serializers.ModelSerializer):
     
     # ✅ AGREGAR: Campo para username en todas las respuestas
     usuario_nombre = serializers.CharField(source='usuario.username', read_only=True)
+    
+    # ✅ AGREGAR: Información del pago
+    payment = PaymentSerializer(read_only=True)
 
     class Meta:
         model = Reservation
         fields = [
             'id', 'codigo_reserva', 'usuario', 'usuario_nombre', 'vehiculo', 'estacionamiento',
             'hora_entrada', 'hora_salida', 'duracion_minutos', 'costo_estimado',
-            'estado', 'tipo_reserva', 'created_at', 'tiempo_restante', 'puede_cancelar'
+            'estado', 'tipo_reserva', 'created_at', 'tiempo_restante', 'puede_cancelar',
+            'payment'  # ✅ AGREGAR este campo
         ]
         read_only_fields = [
             'codigo_reserva', 'created_at', 'estado', 'costo_estimado', 
-            'usuario', 'hora_salida', 'usuario_nombre'
+            'usuario', 'hora_salida', 'usuario_nombre', 'payment'
         ]
 
     def get_tiempo_restante(self, obj):

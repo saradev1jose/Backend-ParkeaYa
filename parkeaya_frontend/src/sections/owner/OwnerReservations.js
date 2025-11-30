@@ -30,22 +30,19 @@ const OwnerReservations = ({ userRole }) => {
     loadReservationStats();
   }, [filters.status, filters.date]);
 
-  
-
   const loadReservations = async () => {
     try {
       setLoading(true);
       setError(null);
-      
+
       console.log('📋 Cargando reservas del propietario...');
-      
-      // Endpoint para reservas del owner según tu API
+
       let url = `${API_BASE}/reservations/owner/reservas/`;
       const params = new URLSearchParams();
-      
+
       if (filters.status !== 'all') params.append('status', filters.status);
       if (filters.date) params.append('date', filters.date);
-      
+
       if (params.toString()) url += `?${params.toString()}`;
 
       const response = await fetch(url, {
@@ -59,41 +56,34 @@ const OwnerReservations = ({ userRole }) => {
         const data = await response.json();
         console.log('✅ Reservas cargadas:', data);
 
-        // Extraer array según estructura de la API
         let items = [];
         if (Array.isArray(data)) items = data;
         else if (data.results) items = data.results;
         else if (data.reservations) items = data.reservations;
         else items = data.data || [];
 
-        // Normalizar cada reserva para que la UI use campos consistentes
         const normalize = (r) => {
-          // usuario puede venir en varios campos: usuario_info, user, usuario
           const usuario = r.usuario_info || r.user || r.usuario || r.usuario_info;
-
-          // vehiculo info
           const veh = r.vehiculo_info || r.vehicle || r.vehicle_info || {};
-
-          // montos y tiempos
           const amount = r.costo_estimado != null ? Number(r.costo_estimado) : (r.amount != null ? Number(r.amount) : 0);
           const start_time = r.hora_entrada || r.start_time || r.entrada || r.check_in_time || null;
           const end_time = r.hora_salida || r.end_time || r.salida || null;
 
-          // estado mapping: backend usa español (activa, finalizada, cancelada)
           const mapStatus = (s) => {
             if (!s) return s;
             const lower = String(s).toLowerCase();
-            if (['activa','active','in_progress'].includes(lower)) return 'active';
-            if (['proxima','proximo','upcoming','confirmed','confirmada'].includes(lower)) return 'upcoming';
-            if (['finalizada','finished','completed'].includes(lower)) return 'completed';
-            if (['cancelada','cancelled'].includes(lower)) return 'cancelled';
+            if (['activa', 'active', 'in_progress'].includes(lower)) return 'active';
+            if (['proxima', 'proximo', 'upcoming', 'confirmed', 'confirmada'].includes(lower)) return 'upcoming';
+            if (['finalizada', 'finished', 'completed'].includes(lower)) return 'completed';
+            if (['cancelada', 'cancelled'].includes(lower)) return 'cancelled';
             return lower;
           };
 
+          // ✅ AGREGAR: Procesar información del pago
+          const payment = r.payment || null;
+
           const normalized = {
-            // keep original
             ...r,
-            // normalized fields used by UI
             user: usuario || null,
             phone: (usuario && (usuario.telefono_formateado || usuario.telefono)) || r.phone || r.telefono || null,
             vehicle_plate: veh.placa || r.vehicle_plate || r.placa || null,
@@ -104,8 +94,24 @@ const OwnerReservations = ({ userRole }) => {
             actual_end_time: r.actual_end_time || r.check_out_time || null,
             amount: amount,
             status: mapStatus(r.estado || r.status),
-            payment_status: r.payment_status || r.estado_pago || r.payment || null,
-            payment_method: r.payment_method || r.metodo_pago || null,
+
+            // ✅ AGREGAR: Información del pago
+            payment: payment ? {
+              metodo: payment.metodo,
+              monto: payment.monto,
+              moneda: payment.moneda,
+              estado: payment.estado,
+              referencia_pago: payment.referencia_pago,
+              fecha_creacion: payment.fecha_creacion,
+              fecha_pago: payment.fecha_pago,
+              comision_plataforma: payment.comision_plataforma,
+              monto_propietario: payment.monto_propietario
+            } : null,
+
+            // Mantener compatibilidad
+            payment_status: payment?.estado || r.payment_status || r.estado_pago || 'pending',
+            payment_method: payment?.metodo || r.payment_method || r.metodo_pago || null,
+
             parking_spot: r.parking_spot || r.spot || r.estacionamiento || null,
             spot_number: (r.parking_spot && r.parking_spot.number) || r.spot_number || (r.estacionamiento && r.estacionamiento.nombre) || null
           };
@@ -170,11 +176,10 @@ const OwnerReservations = ({ userRole }) => {
   const handleReservationAction = async (reservationId, action) => {
     try {
       setActionLoading(reservationId);
-      
+
       let endpoint = '';
       let method = 'POST';
-      
-      // Usar codigo_reserva según tu API
+
       const reservation = reservations.find(r => r.id === reservationId);
       if (!reservation) {
         alert('Reserva no encontrada');
@@ -182,8 +187,8 @@ const OwnerReservations = ({ userRole }) => {
       }
 
       const codigoReserva = reservation.codigo_reserva || reservation.reservation_code;
-      
-      switch(action) {
+
+      switch (action) {
         case 'check_in':
           endpoint = `${API_BASE}/reservations/${codigoReserva}/checkin/`;
           break;
@@ -194,18 +199,17 @@ const OwnerReservations = ({ userRole }) => {
           endpoint = `${API_BASE}/reservations/${codigoReserva}/cancel/`;
           break;
         case 'confirm':
-          // En tu API, la confirmación podría ser parte del check-in o un endpoint separado
           endpoint = `${API_BASE}/reservations/${codigoReserva}/checkin/`;
           break;
         default:
           return;
       }
-      
+
       const response = await fetch(endpoint, {
         method: method,
         headers: getAuthHeaders()
       });
-      
+
       if (response.ok) {
         const result = await response.json();
         console.log(`✅ Acción ${action} exitosa:`, result);
@@ -230,17 +234,16 @@ const OwnerReservations = ({ userRole }) => {
       alert('Selecciona al menos una reserva');
       return;
     }
-    
+
     try {
       setActionLoading('bulk');
-      
-      // Procesar cada reserva seleccionada
-      const promises = selectedReservations.map(reservationId => 
+
+      const promises = selectedReservations.map(reservationId =>
         handleReservationAction(reservationId, action)
       );
-      
+
       await Promise.all(promises);
-      
+
     } catch (error) {
       console.error('Error en acción masiva:', error);
     } finally {
@@ -249,8 +252,8 @@ const OwnerReservations = ({ userRole }) => {
   };
 
   const toggleReservationSelection = (reservationId) => {
-    setSelectedReservations(prev => 
-      prev.includes(reservationId) 
+    setSelectedReservations(prev =>
+      prev.includes(reservationId)
         ? prev.filter(id => id !== reservationId)
         : [...prev, reservationId]
     );
@@ -264,19 +267,18 @@ const OwnerReservations = ({ userRole }) => {
     }
   };
 
-  // Filtrar reservas
   const filteredReservations = reservations.filter(reservation => {
     const matchesStatus = filters.status === 'all' || reservation.status === filters.status;
-    
+
     const searchTerm = filters.search.toLowerCase();
-    const matchesSearch = searchTerm === '' || 
+    const matchesSearch = searchTerm === '' ||
       (reservation.codigo_reserva && reservation.codigo_reserva.toLowerCase().includes(searchTerm)) ||
       (reservation.reservation_code && reservation.reservation_code.toLowerCase().includes(searchTerm)) ||
       (reservation.user?.first_name && reservation.user.first_name.toLowerCase().includes(searchTerm)) ||
       (reservation.user?.last_name && reservation.user.last_name.toLowerCase().includes(searchTerm)) ||
       (reservation.user?.vehicle_plate && reservation.user.vehicle_plate.toLowerCase().includes(searchTerm)) ||
       (reservation.vehicle_plate && reservation.vehicle_plate.toLowerCase().includes(searchTerm));
-    
+
     return matchesStatus && matchesSearch;
   });
 
@@ -323,6 +325,11 @@ const OwnerReservations = ({ userRole }) => {
 
   const getPaymentStatusBadge = (status) => {
     const statuses = {
+      pagado: { label: 'Pagado', class: 'payment-paid', icon: 'fas fa-check' },
+      pendiente: { label: 'Pendiente', class: 'payment-pending', icon: 'fas fa-clock' },
+      fallido: { label: 'Fallido', class: 'payment-failed', icon: 'fas fa-times' },
+      reembolsado: { label: 'Reembolsado', class: 'payment-refunded', icon: 'fas fa-undo' },
+      procesando: { label: 'Procesando', class: 'payment-processing', icon: 'fas fa-sync' },
       paid: { label: 'Pagado', class: 'payment-paid', icon: 'fas fa-check' },
       pending: { label: 'Pendiente', class: 'payment-pending', icon: 'fas fa-clock' },
       failed: { label: 'Fallido', class: 'payment-failed', icon: 'fas fa-times' },
@@ -344,7 +351,6 @@ const OwnerReservations = ({ userRole }) => {
 
   const handleExport = (type) => {
     alert(`Exportando ${type}...`);
-    // Implementar exportación real según tu API
   };
 
   if (loading) {
@@ -358,8 +364,6 @@ const OwnerReservations = ({ userRole }) => {
 
   return (
     <div className="owner-reservations">
-      {/* API banner removed per user request */}
-      {/* 🔥 HEADER */}
       <div className="owner-reservations-header">
         <div className="header-content">
           <h1>Gestión de Reservas</h1>
@@ -371,7 +375,6 @@ const OwnerReservations = ({ userRole }) => {
         </button>
       </div>
 
-      {/* 📊 ESTADÍSTICAS RÁPIDAS */}
       <div className="reservations-stats">
         <div className="stat-card total">
           <div className="stat-icon">
@@ -414,13 +417,12 @@ const OwnerReservations = ({ userRole }) => {
         </div>
       </div>
 
-      {/* 🔍 FILTROS Y CONTROLES */}
       <div className="reservations-controls">
         <div className="filters-section">
           <div className="filter-group">
             <label>Filtrar por Estado:</label>
-            <select 
-              value={filters.status} 
+            <select
+              value={filters.status}
               onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
             >
               <option value="all">Todos los estados</option>
@@ -435,7 +437,7 @@ const OwnerReservations = ({ userRole }) => {
 
           <div className="filter-group">
             <label>Filtrar por Fecha:</label>
-            <input 
+            <input
               type="date"
               value={filters.date}
               onChange={(e) => setFilters(prev => ({ ...prev, date: e.target.value }))}
@@ -444,8 +446,8 @@ const OwnerReservations = ({ userRole }) => {
 
           <div className="filter-group">
             <label>Buscar:</label>
-            <input 
-              type="text" 
+            <input
+              type="text"
               placeholder="Código, nombre o placa..."
               value={filters.search}
               onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
@@ -453,19 +455,18 @@ const OwnerReservations = ({ userRole }) => {
           </div>
         </div>
 
-        {/* 📦 ACCIONES MASIVAS */}
         {selectedReservations.length > 0 && (
           <div className="bulk-actions">
             <span>{selectedReservations.length} reservas seleccionadas</span>
             <div className="bulk-buttons">
-              <button 
+              <button
                 className="btn-confirm"
                 onClick={() => handleBulkAction('confirm')}
                 disabled={actionLoading === 'bulk'}
               >
                 {actionLoading === 'bulk' ? 'Procesando...' : 'Confirmar Seleccionadas'}
               </button>
-              <button 
+              <button
                 className="btn-cancel"
                 onClick={() => handleBulkAction('cancel')}
                 disabled={actionLoading === 'bulk'}
@@ -477,12 +478,11 @@ const OwnerReservations = ({ userRole }) => {
         )}
       </div>
 
-      {/* 📋 LISTA DE RESERVAS */}
       <div className="reservations-list">
         {filteredReservations.length > 0 && (
           <div className="reservations-header">
             <div className="select-all">
-              <input 
+              <input
                 type="checkbox"
                 checked={selectedReservations.length === filteredReservations.length && filteredReservations.length > 0}
                 onChange={toggleSelectAll}
@@ -495,14 +495,12 @@ const OwnerReservations = ({ userRole }) => {
           </div>
         )}
 
-        {/* Encabezado eliminado: las tarjetas muestran la información ordenada internamente */}
-
         {filteredReservations.map(reservation => {
           const statusInfo = getStatusBadge(reservation.status);
           const paymentInfo = getPaymentStatusBadge(reservation.payment_status);
           const duration = calculateDuration(reservation.start_time, reservation.end_time);
           const reservationCode = reservation.codigo_reserva || reservation.reservation_code;
-          
+
           return (
             <div key={reservation.id} className={`reservation-card ${reservation.status}`}>
               <div className="reservation-header">
@@ -513,7 +511,7 @@ const OwnerReservations = ({ userRole }) => {
                       Creada: {formatDateTime(reservation.created_at)}
                     </span>
                   </div>
-                  
+
                   <div className="reservation-badges">
                     <span className={`status-badge ${statusInfo.class}`}>
                       {statusInfo.icon && <i className={statusInfo.icon}></i>}
@@ -527,7 +525,7 @@ const OwnerReservations = ({ userRole }) => {
                 </div>
 
                 <div className="reservation-selection">
-                  <input 
+                  <input
                     type="checkbox"
                     checked={selectedReservations.includes(reservation.id)}
                     onChange={() => toggleReservationSelection(reservation.id)}
@@ -570,7 +568,7 @@ const OwnerReservations = ({ userRole }) => {
                         )}
                       </div>
                     </div>
-                    
+
                     <div className="time-item">
                       <i className="fas fa-stop"></i>
                       <div>
@@ -584,7 +582,7 @@ const OwnerReservations = ({ userRole }) => {
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="duration-info">
                     <span className="duration">{duration}</span>
                     <span className="spot">
@@ -593,13 +591,71 @@ const OwnerReservations = ({ userRole }) => {
                   </div>
                 </div>
 
+                {/* ✅ AGREGAR: Información del pago */}
+                {reservation.payment && (
+                  <div className="payment-details">
+                    <h5>
+                      <i className="fas fa-credit-card"></i> Información de Pago
+                    </h5>
+                    <div className="payment-grid">
+                      <div className="payment-item">
+                        <strong>Método:</strong>
+                        <span className="payment-method">
+                          {reservation.payment.metodo === 'yape' && <i className="fas fa-mobile-alt"></i>}
+                          {reservation.payment.metodo === 'plin' && <i className="fas fa-wallet"></i>}
+                          {reservation.payment.metodo === 'tarjeta' && <i className="fas fa-credit-card"></i>}
+                          {reservation.payment.metodo}
+                        </span>
+                      </div>
+                      <div className="payment-item">
+                        <strong>Monto:</strong>
+                        <span className="payment-amount">
+                          {reservation.payment.moneda} {reservation.payment.monto}
+                        </span>
+                      </div>
+                      <div className="payment-item">
+                        <strong>Estado:</strong>
+                        <span className={`payment-status ${reservation.payment.estado}`}>
+                          {reservation.payment.estado}
+                        </span>
+                      </div>
+                      <div className="payment-item">
+                        <strong>Referencia:</strong>
+                        <span className="payment-reference">
+                          {reservation.payment.referencia_pago}
+                        </span>
+                      </div>
+                      {reservation.payment.fecha_pago && (
+                        <div className="payment-item full-width">
+                          <strong>Fecha de pago:</strong>
+                          <span>{formatDateTime(reservation.payment.fecha_pago)}</span>
+                        </div>
+                      )}
+                      {reservation.payment.comision_plataforma && (
+                        <div className="payment-item">
+                          <strong>Comisión:</strong>
+                          <span>{reservation.payment.moneda} {reservation.payment.comision_plataforma}</span>
+                        </div>
+                      )}
+                      {reservation.payment.monto_propietario && (
+                        <div className="payment-item">
+                          <strong>Neto:</strong>
+                          <span>{reservation.payment.moneda} {reservation.payment.monto_propietario}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="payment-info">
                   <div className="amount">
                     <strong>{formatCurrency(reservation.amount)}</strong>
-                    <span className="payment-method">
-                      <i className={`fas fa-${reservation.payment_method === 'credit_card' ? 'credit-card' : reservation.payment_method === 'paypal' ? 'paypal' : 'money-bill'}`}></i>
-                      {reservation.payment_method || 'No especificado'}
-                    </span>
+                    {!reservation.payment && (
+                      <span className="no-payment">
+                        <i className="fas fa-clock"></i>
+                        Pendiente de pago
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -612,17 +668,16 @@ const OwnerReservations = ({ userRole }) => {
               )}
 
               <div className="reservation-actions">
-                {/* Acciones para reservas próximas/pendientes */}
                 {(reservation.status === 'upcoming' || reservation.status === 'pending' || reservation.status === 'confirmed') && (
                   <>
-                    <button 
+                    <button
                       className="btn-check-in"
                       onClick={() => handleReservationAction(reservation.id, 'check_in')}
                       disabled={actionLoading === reservation.id}
                     >
                       {actionLoading === reservation.id ? '...' : 'Check-in'}
                     </button>
-                    <button 
+                    <button
                       className="btn-cancel"
                       onClick={() => handleReservationAction(reservation.id, 'cancel')}
                       disabled={actionLoading === reservation.id}
@@ -632,9 +687,8 @@ const OwnerReservations = ({ userRole }) => {
                   </>
                 )}
 
-                {/* Acciones para reservas activas */}
                 {(reservation.status === 'active' || reservation.status === 'in_progress') && (
-                  <button 
+                  <button
                     className="btn-check-out"
                     onClick={() => handleReservationAction(reservation.id, 'check_out')}
                     disabled={actionLoading === reservation.id}
@@ -643,8 +697,7 @@ const OwnerReservations = ({ userRole }) => {
                   </button>
                 )}
 
-                {/* Acciones para todas las reservas */}
-                <button 
+                <button
                   className="btn-view"
                   onClick={() => setViewModal(reservation)}
                 >
@@ -668,17 +721,16 @@ const OwnerReservations = ({ userRole }) => {
         )}
       </div>
 
-      {/* 🌐 ACCIONES GLOBALES */}
       <div className="global-actions">
-        <button 
+        <button
           className="btn-export"
           onClick={() => handleExport('reservations')}
         >
           <i className="fas fa-download"></i>
           Exportar Reporte
         </button>
-        
-        <button 
+
+        <button
           className="btn-print"
           onClick={() => window.print()}
         >
@@ -687,7 +739,6 @@ const OwnerReservations = ({ userRole }) => {
         </button>
       </div>
 
-      {/* 🔍 MODAL DE DETALLES */}
       {viewModal && (
         <div className="modal-overlay" onClick={() => setViewModal(null)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -697,7 +748,7 @@ const OwnerReservations = ({ userRole }) => {
                 <i className="fas fa-times"></i>
               </button>
             </div>
-            
+
             <div className="modal-body">
               <div className="detail-section">
                 <h3>Información General</h3>
@@ -713,20 +764,68 @@ const OwnerReservations = ({ userRole }) => {
                     </span>
                   </div>
                   <div className="detail-item">
-                    <strong>Pago:</strong>
-                    <span className={`payment-badge ${getPaymentStatusBadge(viewModal.payment_status).class}`}>
-                      {getPaymentStatusBadge(viewModal.payment_status).icon && (
-                        <i className={getPaymentStatusBadge(viewModal.payment_status).icon}></i>
-                      )}
-                      {getPaymentStatusBadge(viewModal.payment_status).label}
-                    </span>
-                  </div>
-                  <div className="detail-item">
                     <strong>Monto:</strong>
                     <span>{formatCurrency(viewModal.amount)}</span>
                   </div>
                 </div>
               </div>
+
+              {/* ✅ AGREGAR: Sección de información del pago en el modal */}
+              {viewModal.payment && (
+                <div className="detail-section">
+                  <h3>Información de Pago</h3>
+                  <div className="detail-grid">
+                    <div className="detail-item">
+                      <strong>Método:</strong>
+                      <span>
+                        {viewModal.payment.metodo === 'yape' && <i className="fas fa-mobile-alt"></i>}
+                        {viewModal.payment.metodo === 'plin' && <i className="fas fa-wallet"></i>}
+                        {viewModal.payment.metodo === 'tarjeta' && <i className="fas fa-credit-card"></i>}
+                        {' '}{viewModal.payment.metodo}
+                      </span>
+                    </div>
+                    <div className="detail-item">
+                      <strong>Monto:</strong>
+                      <span>{viewModal.payment.moneda} {viewModal.payment.monto}</span>
+                    </div>
+                    <div className="detail-item">
+                      <strong>Estado:</strong>
+                      <span className={`payment-badge ${getPaymentStatusBadge(viewModal.payment.estado).class}`}>
+                        {getPaymentStatusBadge(viewModal.payment.estado).icon && (
+                          <i className={getPaymentStatusBadge(viewModal.payment.estado).icon}></i>
+                        )}
+                        {getPaymentStatusBadge(viewModal.payment.estado).label}
+                      </span>
+                    </div>
+                    <div className="detail-item">
+                      <strong>Referencia:</strong>
+                      <span>{viewModal.payment.referencia_pago}</span>
+                    </div>
+                    <div className="detail-item">
+                      <strong>Fecha creación:</strong>
+                      <span>{formatDateTime(viewModal.payment.fecha_creacion)}</span>
+                    </div>
+                    {viewModal.payment.fecha_pago && (
+                      <div className="detail-item">
+                        <strong>Fecha pago:</strong>
+                        <span>{formatDateTime(viewModal.payment.fecha_pago)}</span>
+                      </div>
+                    )}
+                    {viewModal.payment.comision_plataforma && (
+                      <div className="detail-item">
+                        <strong>Comisión plataforma:</strong>
+                        <span>{viewModal.payment.moneda} {viewModal.payment.comision_plataforma}</span>
+                      </div>
+                    )}
+                    {viewModal.payment.monto_propietario && (
+                      <div className="detail-item">
+                        <strong>Monto propietario:</strong>
+                        <span>{viewModal.payment.moneda} {viewModal.payment.monto_propietario}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div className="detail-section">
                 <h3>Información del Cliente</h3>
@@ -746,7 +845,7 @@ const OwnerReservations = ({ userRole }) => {
                   <div className="detail-item">
                     <strong>Vehículo:</strong>
                     <span>
-                      {viewModal.user?.vehicle_model || viewModal.vehicle_model || 'Modelo no especificado'} 
+                      {viewModal.user?.vehicle_model || viewModal.vehicle_model || 'Modelo no especificado'}
                       ({viewModal.user?.vehicle_plate || viewModal.vehicle_plate || 'N/A'})
                     </span>
                   </div>
@@ -790,7 +889,6 @@ const OwnerReservations = ({ userRole }) => {
         </div>
       )}
 
-      {/* ⚠️ DEBUG INFO */}
       {error && (
         <div className="error-message">
           <i className="fas fa-exclamation-triangle"></i>

@@ -345,6 +345,7 @@ class ReservationViewSet(viewsets.ModelViewSet):
         """
         Cancelar reserva
         """
+        # ✅ pk contiene el UUID de la reserva
         reservation = self.get_object()
         user = request.user
 

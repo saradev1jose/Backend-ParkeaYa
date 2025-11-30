@@ -5,6 +5,7 @@ URL configuration for parkeaya project.
 from django.contrib import admin
 from django.urls import path, include
 from rest_framework import routers
+from rest_framework.routers import SimpleRouter 
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,
@@ -29,6 +30,10 @@ router.register(r'reservations', ReservationViewSet, basename='reservation')
 router.register(r'payments', PaymentViewSet, basename='payment')
 router.register(r'tickets', TicketViewSet, basename='ticket')
 
+# Router simple para reservaciones
+simple_router = SimpleRouter()
+simple_router.register(r'reservations', ReservationViewSet, basename='reservation')
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     
@@ -48,6 +53,7 @@ urlpatterns = [
     path('api/analytics/', include('analytic.urls')),
 
     path('api/', include(router.urls)),
+    path('api/', include(simple_router.urls)),
     # Compatibilidad: ruta singular usada por cliente Android antiguo
     path('api/reservation/', ReservationViewSet.as_view({'post': 'create'})),
     

@@ -45,11 +45,13 @@ class PaymentViewSet(viewsets.ModelViewSet):
                 payment.save()
                 
                 # Programar verificación periódica
-                from .tasks import verificar_pago_pendiente
-                verificar_pago_pendiente.apply_async(
-                    args=[payment.id], 
-                    countdown=300  # 5 minutos
-                )
+                #from .tasks import verificar_pago_pendiente
+                #verificar_pago_pendiente.apply_async(
+                  #  args=[payment.id], 
+                   # countdown=300  # 5 minutos
+                #)
+                
+            return payment
 
     # ACCIONES PÚBLICAS (para todos los usuarios autenticados)
     @action(detail=True, methods=['post'])

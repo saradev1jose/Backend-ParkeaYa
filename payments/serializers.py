@@ -1,7 +1,8 @@
 # payments/serializers.py
 from rest_framework import serializers
 from .models import Payment, PaymentHistory
-from reservations.serializers import ReservationDetailSerializer
+from reservations.models import Reservation
+# from reservations.serializers import ReservationDetailSerializer  # ❌ COMENTAR ESTA LÍNEA
 
 class PaymentHistorySerializer(serializers.ModelSerializer):
     class Meta:
@@ -9,9 +10,13 @@ class PaymentHistorySerializer(serializers.ModelSerializer):
         fields = ['estado_anterior', 'estado_nuevo', 'mensaje', 'fecha_creacion', 'datos_adicionales']
 
 class PaymentSerializer(serializers.ModelSerializer):
-    reserva = ReservationDetailSerializer(read_only=True)
+    reserva = serializers.PrimaryKeyRelatedField(read_only=True)
+    usuario = serializers.StringRelatedField(read_only=True)
     referencia_pago = serializers.CharField(read_only=True)
     history = PaymentHistorySerializer(many=True, read_only=True)
+    
+    # ✅ AGREGAR: Información básica de la reserva sin dependencia circular
+    reserva_info = serializers.SerializerMethodField()
     
     # Campos calculados
     puede_reembolsar = serializers.BooleanField(read_only=True)
@@ -23,7 +28,7 @@ class PaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payment
         fields = [
-            'id', 'referencia_pago', 'reserva', 'usuario', 'monto', 'moneda',
+            'id', 'referencia_pago', 'reserva', 'reserva_info', 'usuario', 'monto', 'moneda',
             'metodo', 'estado', 'comision_plataforma', 'monto_propietario',
             'fecha_creacion', 'fecha_pago', 'fecha_reembolso', 'intentos',
             'puede_reembolsar', 'qr_yape', 'qr_plin', 'telefono_yape', 'telefono_plin', 'history'
@@ -33,6 +38,21 @@ class PaymentSerializer(serializers.ModelSerializer):
             'monto_propietario', 'fecha_creacion', 'fecha_pago', 'fecha_reembolso',
             'intentos', 'history'
         ]
+
+    def get_reserva_info(self, obj):
+        """Obtener información básica de la reserva sin dependencia circular"""
+        try:
+            reserva = obj.reserva
+            return {
+                'id': reserva.id,
+                'codigo_reserva': reserva.codigo_reserva,
+                'estado': reserva.estado,
+                'costo_estimado': str(reserva.costo_estimado),
+                'hora_entrada': reserva.hora_entrada,
+                'hora_salida': reserva.hora_salida
+            }
+        except Reservation.DoesNotExist:
+            return None
 
     def get_qr_yape(self, obj):
         """Genera datos para QR de Yape"""
@@ -65,6 +85,9 @@ class PaymentSerializer(serializers.ModelSerializer):
 
 
 class CreatePaymentSerializer(serializers.ModelSerializer):
+    reserva = serializers.PrimaryKeyRelatedField(
+        queryset=Reservation.objects.all()
+    )
    
     token_pago = serializers.CharField(write_only=True, required=False)
     
@@ -110,23 +133,33 @@ class CreatePaymentSerializer(serializers.ModelSerializer):
         token_pago = validated_data.pop('token_pago', None)
         request = self.context.get('request')
         
+        # Obtener la reserva
+        reserva = validated_data['reserva']
+        
+        # Crear el pago
         payment = Payment.objects.create(
-            reserva=validated_data['reserva'],
+            reserva=reserva,
             metodo=validated_data['metodo'],
             usuario=request.user,
-            monto=validated_data['reserva'].costo_estimado
+            monto=reserva.costo_estimado
         )
+        
+        # ✅ ACTUALIZAR LA RESERVA CON LA INFORMACIÓN DEL PAGO
+        reserva.estado = 'confirmada'  # o el estado que uses para reservas pagadas
+        reserva.save()
         
         # Procesar pago inmediato para tarjeta
         if payment.metodo == 'tarjeta' and token_pago:
             payment.procesar_pago(token_pago)
         elif payment.metodo in ['yape', 'plin']:
-            
-            from .tasks import verificar_pago_pendiente
-            verificar_pago_pendiente.apply_async(
-                args=[payment.id], 
-                countdown=300  
-            )
+            # from .tasks import verificar_pago_pendiente
+            # verificar_pago_pendiente.apply_async(
+            #     args=[payment.id], 
+            #     countdown=300  
+            # )
+            print(f"✅ Pago {payment.id} creado - Método: {payment.metodo}")
+            print(f"💰 Monto: {payment.monto} - Reserva: {payment.reserva.id}")
+            print(f"📊 Estado reserva actualizado: {reserva.estado}")
         
         return payment
 
