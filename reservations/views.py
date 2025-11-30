@@ -139,13 +139,6 @@ class ReservationViewSet(viewsets.ModelViewSet):
         """
         Crear reserva - PARA TODOS LOS USUARIOS AUTENTICADOS
         """
-        # ✅ ELIMINAR esta validación que bloquea a no-clientes
-        # if not request.user.is_client:
-        #     return Response(
-        #         {'detail': 'Solo los clientes pueden crear reservas.'},
-        #         status=status.HTTP_403_FORBIDDEN
-        #     )
-
         data = request.data.copy()
         user = request.user
 
@@ -166,48 +159,56 @@ class ReservationViewSet(viewsets.ModelViewSet):
         if errors:
             return Response(errors, status=status.HTTP_400_BAD_REQUEST)
 
+        # ✅ CORRECCIÓN: Buscar PRIMERO en Vehicle y convertir a Car si es necesario
+        vehiculo_car = None
+        user_vehicles = []
+        user_cars = []
+        
         try:
-            vehiculo = Car.objects.get(id=vehiculo_id, usuario=user)
-        except Car.DoesNotExist:
-            # Intentar resolver contra la app `vehicles` (compatibilidad con cliente Android)
-            external_list = []
+            from vehicles.models import Vehicle as ExternalVehicle
             try:
-                from vehicles.models import Vehicle as ExternalVehicle
-                try:
-                    ext = ExternalVehicle.objects.get(id=vehiculo_id, usuario=user)
-                except ExternalVehicle.DoesNotExist:
-                    # Lista de vehículos en users y en la app vehicles para ayudar al cliente
-                    user_cars = list(Car.objects.filter(usuario=user).values('id', 'placa'))
-                    external_list = list(ExternalVehicle.objects.filter(usuario=user).values('id', 'placa'))
-                    return Response(
-                        {
-                            'vehiculo': ['Vehículo no encontrado o no pertenece al usuario.'],
-                            'user_vehiculos': user_cars,
-                            'user_vehicles_external': external_list
-                        },
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-
-                # Si encontramos un ExternalVehicle válido, crear o reutilizar un Car en users
-                vehiculo, created = Car.objects.get_or_create(
-                    placa=ext.placa,
+                # Buscar en Vehicle primero
+                vehiculo_external = ExternalVehicle.objects.get(id=vehiculo_id, usuario=user)
+                
+                # ✅ CONVERTIR: Crear o obtener un Car equivalente
+                vehiculo_car, created = Car.objects.get_or_create(
+                    placa=vehiculo_external.placa,
+                    usuario=user,
                     defaults={
-                        'usuario': user,
-                        'modelo': getattr(ext, 'modelo', ''),
+                        'modelo': getattr(vehiculo_external, 'modelo', ''),
+                        'marca': getattr(vehiculo_external, 'marca', ''),
                         'tipo': 'auto',
-                        'color': getattr(ext, 'color', '')
+                        'color': getattr(vehiculo_external, 'color', '')
                     }
                 )
-            except Exception:
-                # Si no existe la app `vehicles` o hubo otro error, devolver solo los cars de users
-                user_cars = list(Car.objects.filter(usuario=user).values('id', 'placa'))
-                return Response(
-                    {
-                        'vehiculo': ['Vehículo no encontrado o no pertenece al usuario.'],
-                        'user_vehiculos': user_cars
-                    },
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+                
+            except ExternalVehicle.DoesNotExist:
+                pass
+            user_vehicles = list(ExternalVehicle.objects.filter(usuario=user).values('id', 'placa'))
+        except ImportError:
+            pass
+
+        # Si no encontró en vehicles, intentar en Car directamente
+        if not vehiculo_car:
+            try:
+                vehiculo_car = Car.objects.get(id=vehiculo_id, usuario=user)
+            except Car.DoesNotExist:
+                pass
+            user_cars = list(Car.objects.filter(usuario=user).values('id', 'placa'))
+
+        # Si no encontró en ningún lado, retornar error
+        if not vehiculo_car:
+            return Response(
+                {
+                    'vehiculo': ['Vehículo no encontrado o no pertenece al usuario.'],
+                    'user_vehicles': user_vehicles,
+                    'user_cars': user_cars
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # ✅ Ahora usar vehiculo_car (que es del modelo Car)
+        vehiculo = vehiculo_car
 
         # Bloquear estacionamiento para evitar overbooking
         try:
@@ -323,7 +324,7 @@ class ReservationViewSet(viewsets.ModelViewSet):
 
         # Crear reserva
         create_payload = {
-            'vehiculo': vehiculo_id,
+            'vehiculo': vehiculo.id,
             'estacionamiento': estacionamiento_id,
             'hora_entrada': entrada_dt,
             'hora_salida': salida_dt,

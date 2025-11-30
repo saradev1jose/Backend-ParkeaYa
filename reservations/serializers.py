@@ -20,17 +20,20 @@ class ReservationBaseSerializer(serializers.ModelSerializer):
         choices=Reservation.TIPO_RESERVA_CHOICES, 
         default='hora'
     )
+    
+    # ✅ AGREGAR: Campo para username en todas las respuestas
+    usuario_nombre = serializers.CharField(source='usuario.username', read_only=True)
 
     class Meta:
         model = Reservation
         fields = [
-            'id', 'codigo_reserva', 'usuario', 'vehiculo', 'estacionamiento',
+            'id', 'codigo_reserva', 'usuario', 'usuario_nombre', 'vehiculo', 'estacionamiento',
             'hora_entrada', 'hora_salida', 'duracion_minutos', 'costo_estimado',
             'estado', 'tipo_reserva', 'created_at', 'tiempo_restante', 'puede_cancelar'
         ]
         read_only_fields = [
             'codigo_reserva', 'created_at', 'estado', 'costo_estimado', 
-            'usuario', 'hora_salida'
+            'usuario', 'hora_salida', 'usuario_nombre'
         ]
 
     def get_tiempo_restante(self, obj):

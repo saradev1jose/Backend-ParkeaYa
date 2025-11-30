@@ -131,6 +131,7 @@ class Car(models.Model):
         blank=True
     )
     placa = models.CharField(max_length=20, unique=True)
+    marca = models.CharField(max_length=50, blank=True)
     modelo = models.CharField(max_length=80, blank=True)
     tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default='auto')
     color = models.CharField(max_length=30, blank=True)

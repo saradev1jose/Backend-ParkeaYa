@@ -4,6 +4,8 @@ from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
 from django.db import IntegrityError
+import logging
+from django.conf import settings
 from .models import Vehicle
 from .serializers import VehicleSerializer, CreateVehicleSerializer
 
@@ -23,27 +25,28 @@ class UserVehicleListCreateView(generics.ListCreateAPIView):
         context['request'] = self.request
         return context
 
-        def create(self, request, *args, **kwargs):
-            # Log datos recibidos para debug
-            logging.info(f"Intentando registrar vehículo: {request.data}")
-            try:
-                return super().create(request, *args, **kwargs)
-            except ValidationError as e:
+    # ✅ CORREGIDO: Este método debe estar AL MISMO NIVEL que get_serializer_context
+    def create(self, request, *args, **kwargs):
+        # Log datos recibidos para debug
+        logging.info(f"Intentando registrar vehículo: {request.data}")
+        try:
+            return super().create(request, *args, **kwargs)
+        except ValidationError as e:
+            return Response(
+                e.detail,
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            logging.exception("Error creating vehicle")
+            if getattr(settings, 'DEBUG', False):
                 return Response(
-                    e.detail,
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            except Exception as e:
-                logging.exception("Error creating vehicle")
-                if getattr(settings, 'DEBUG', False):
-                    return Response(
-                        {'error': str(e)},
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
-                    )
-                return Response(
-                    {'error': 'Error interno del servidor al crear el vehículo'},
+                    {'error': str(e)},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR
                 )
+            return Response(
+                {'error': 'Error interno del servidor al crear el vehículo'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 class UserVehicleDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = VehicleSerializer
