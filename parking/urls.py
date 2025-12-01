@@ -2,8 +2,12 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     ParkingLotViewSet, 
-    ParkingReviewViewSet, 
+    ParkingReviewViewSet,
     ParkingApprovalViewSet,
+    create_parking_review,
+    parking_reviews_public,
+    report_review,
+    admin_deactivate_review,
     admin_approved_parkings,
     admin_dashboard_data,
     admin_pending_parkings,
@@ -50,4 +54,10 @@ urlpatterns = [
     path('my-parkings/', ParkingLotViewSet.as_view({'get': 'mis_estacionamientos'}), name='my-parkings'),
 
     path('api/parkings/', ParkingLotViewSet.as_view({'get': 'list'}), name='parkings-list'),
+    path('reviews/create/', create_parking_review, name='create-parking-review'),
+    path('reviews/parking/<int:parking_id>/', parking_reviews_public, name='parking-reviews-public'),
+    path('reviews/<int:review_id>/report/', report_review, name='report-review'),
+    path('admin/reviews/<int:review_id>/deactivate/', admin_deactivate_review, name='admin-deactivate-review'),
+    path('<int:parking_id>/reviews/', parking_reviews_public, name='parking-reviews-public-root'),
+    path('parkings/<int:parking_id>/reviews/', parking_reviews_public, name='parking-reviews-public'),
 ]

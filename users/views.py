@@ -391,3 +391,51 @@ def change_own_password(request):
     user.set_password(new_password)
     user.save()
     return Response({'message': 'Contraseña actualizada correctamente'})
+
+
+@api_view(['PUT'])
+@permission_classes([permissions.IsAuthenticated])
+def change_password(request):
+    """Permite al usuario cambiar su contraseña desde el perfil"""
+    user = request.user
+    old_password = request.data.get('old_password')
+    new_password = request.data.get('new_password')
+    confirm_password = request.data.get('confirm_password')
+    
+    print(f"🔐 [CAMBIAR CONTRASEÑA] Usuario: {user.username}")
+    
+    if not all([old_password, new_password]):
+        return Response(
+            {'error': 'Se requieren la contraseña actual y la nueva'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Verificar confirmación si se proporciona
+    if confirm_password and new_password != confirm_password:
+        return Response(
+            {'error': 'La nueva contraseña y la confirmación no coinciden'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Verificar contraseña actual
+    if not user.check_password(old_password):
+        print("❌ [CAMBIAR CONTRASEÑA] Contraseña actual incorrecta")
+        return Response(
+            {'error': 'Contraseña actual incorrecta'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Validar longitud de nueva contraseña
+    if len(new_password) < 6:
+        return Response(
+            {'error': 'La nueva contraseña debe tener al menos 6 caracteres'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Cambiar contraseña
+    user.set_password(new_password)
+    user.save()
+    
+    print("✅ [CAMBIAR CONTRASEÑA] Contraseña actualizada exitosamente")
+    
+    return Response({'message': 'Contraseña actualizada correctamente'})
