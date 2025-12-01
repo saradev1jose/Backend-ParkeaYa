@@ -5,6 +5,7 @@ from .models import Car
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth import authenticate
 import re
+from .models import SolicitudAccesoOwner
 
 User = get_user_model()
 
@@ -217,3 +218,17 @@ class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
             'last_name': user.last_name
         }
         return data
+    
+class SolicitudAccesoOwnerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SolicitudAccesoOwner
+        fields = [
+            'id', 'nombre', 'email', 'telefono', 'empresa', 'mensaje',
+            'estado', 'fecha_solicitud', 'fecha_revision', 'comentarios_rechazo'
+        ]
+        read_only_fields = ['id', 'fecha_solicitud', 'fecha_revision', 'estado', 'comentarios_rechazo']
+
+class SolicitudRevisionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SolicitudAccesoOwner
+        fields = ['estado', 'comentarios_rechazo']

@@ -17,9 +17,19 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from django.utils import timezone
 from datetime import datetime
 
+from .models import SolicitudAccesoOwner
+from .serializers import SolicitudAccesoOwnerSerializer, SolicitudRevisionSerializer
+from django.core.mail import send_mail
+from django.conf import settings
+import secrets
+import string
+import logging
+import traceback
+
 from django.db.models import Q  
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 class MyTokenObtainPairView(TokenObtainPairView):
     serializer_class = MyTokenObtainPairSerializer
@@ -105,7 +115,7 @@ class ClientUserViewSet(UserViewSet):
     def perform_update(self, serializer):
         instance = serializer.instance
         if not self.request.user.is_superuser and not self.request.user.rol == 'admin':
-            # ✅ ACTUALIZADO: Permitir actualizar todos los campos del perfil
+            #  Permitir actualizar todos los campos del perfil
             allowed_fields = {
                 'first_name', 'last_name', 'email', 'telefono',
                 'tipo_documento', 'numero_documento', 'fecha_nacimiento',
@@ -391,3 +401,260 @@ def change_own_password(request):
     user.set_password(new_password)
     user.save()
     return Response({'message': 'Contraseña actualizada correctamente'})
+
+
+# solicitud del owner
+
+@api_view(['POST'])
+@permission_classes([permissions.AllowAny])
+def solicitar_acceso_owner(request):
+    """
+    Endpoint público para solicitar acceso como owner
+    Recibe: nombre, email, telefono, empresa, mensaje
+    """
+    serializer = SolicitudAccesoOwnerSerializer(data=request.data)
+    
+    if serializer.is_valid():
+        # Verificar si ya existe una solicitud pendiente con este email
+        email = serializer.validated_data['email']
+        solicitud_existente = SolicitudAccesoOwner.objects.filter(
+            email=email, 
+            estado='pendiente'
+        ).exists()
+        
+        if solicitud_existente:
+            return Response(
+                {'error': 'Ya tienes una solicitud pendiente con este email'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        solicitud = serializer.save()
+        
+        #  Enviar email de confirmación de recepción
+        try:
+            from_email = (getattr(settings, 'DEFAULT_FROM_EMAIL', None) or
+                          getattr(settings, 'EMAIL_HOST_USER', None) or
+                          'no-reply@parkeaya.com')
+            from_email = from_email.strip() if isinstance(from_email, str) else from_email
+
+            send_mail(
+                'Solicitud de Registro Recibida - ParkEA',
+                f'Hola {solicitud.nombre},\n\n'
+                f'Hemos recibido tu solicitud para registrar "{solicitud.empresa}".\n'
+                f'Tu solicitud será revisada por nuestro equipo administrativo y te notificaremos el resultado.\n\n'
+                f'Gracias por elegir ParkEA.',
+                from_email,
+                [solicitud.email],
+                fail_silently=True,
+            )
+        except Exception as e:
+            print(f"Error enviando email: {e}")
+        
+        return Response(
+            {
+                'message': 'Solicitud enviada correctamente. Será revisada por el administrador.',
+                'solicitud_id': solicitud.id
+            },
+            status=status.HTTP_201_CREATED
+        )
+    
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated, IsAdminGeneral])
+def listar_solicitudes_pendientes(request):
+    """
+    Listar solicitudes pendientes para el admin
+    """
+    estado = request.GET.get('estado', 'pendiente')
+    if estado == 'todas':
+        solicitudes = SolicitudAccesoOwner.objects.all().order_by('-fecha_solicitud')
+    else:
+        solicitudes = SolicitudAccesoOwner.objects.filter(estado=estado).order_by('-fecha_solicitud')
+    
+    serializer = SolicitudAccesoOwnerSerializer(solicitudes, many=True)
+    return Response(serializer.data)
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated, IsAdminGeneral])
+def revisar_solicitud_owner(request, solicitud_id):
+    """
+    Aprobar o rechazar una solicitud
+    """
+    try:
+        solicitud = SolicitudAccesoOwner.objects.get(id=solicitud_id, estado='pendiente')
+    except SolicitudAccesoOwner.DoesNotExist:
+        return Response(
+            {'error': 'Solicitud no encontrada o ya revisada'},
+            status=status.HTTP_404_NOT_FOUND
+        )
+    
+    # Envolver lógica en try/except para capturar errores y facilitar debugging
+    try:
+        print(f"\n=== REVISAR SOLICITUD {solicitud_id} ===")
+        print(f"Request data: {request.data}")
+        
+        serializer = SolicitudRevisionSerializer(data=request.data)
+
+        if serializer.is_valid():
+            estado = serializer.validated_data['estado']
+            comentarios = serializer.validated_data.get('comentarios_rechazo', '')
+
+            # Normalizar valores (aceptar 'aprobada'/'aprobado')
+            if estado in ('aprobada', 'aprobado'):
+                estado = 'aprobado'
+            elif estado in ('rechazada', 'rechazado'):
+                estado = 'rechazado'
+
+            print(f"Estado normalizado: {estado}")
+            
+            solicitud.estado = estado
+            solicitud.comentarios_rechazo = comentarios
+            solicitud.fecha_revision = timezone.now()
+            solicitud.revisado_por = request.user
+
+            if estado == 'aprobado':
+                # Generar usuario y contraseña automáticos
+                username = generar_username_unico(solicitud.email)
+                password = generar_password_aleatoria()
+
+                print(f"Creando usuario: {username}")
+                
+                # Crear el usuario owner
+                try:
+                    user = User.objects.create_user(
+                        username=username,
+                        email=solicitud.email,
+                        password=password,
+                        first_name=solicitud.nombre.split(' ')[0],
+                        last_name=' '.join(solicitud.nombre.split(' ')[1:]) if len(solicitud.nombre.split(' ')) > 1 else '',
+                        telefono=solicitud.telefono,
+                        rol='owner'
+                    )
+
+                    solicitud.usuario_creado = user
+                    print(f"✓ Usuario creado: {username}")
+
+                    # Enviar email con credenciales
+                    try:
+                        print(f"Enviando email a: {solicitud.email}")
+                        from_email = (getattr(settings, 'DEFAULT_FROM_EMAIL', None) or
+                                      getattr(settings, 'EMAIL_HOST_USER', None) or
+                                      'no-reply@parkeaya.com')
+                        from_email = from_email.strip() if isinstance(from_email, str) else from_email
+
+                        try:
+                            send_mail(
+                                'Solicitud Aprobada - Credenciales ParkEA',
+                                f'Hola {solicitud.nombre},\n\n'
+                                f'¡Felicidades! Tu solicitud para "{solicitud.empresa}" ha sido APROBADA.\n\n'
+                                f'Tus credenciales de acceso son:\n'
+                                f'Usuario: {username}\n'
+                                f'Contraseña: {password}\n\n'
+                                f'Puedes acceder a tu panel owner en: {settings.FRONTEND_URL}/owner/login\n\n'
+                                f'Te recomendamos cambiar tu contraseña después del primer acceso.\n\n'
+                                f'Bienvenido a ParkEA!',
+                                from_email,
+                                [solicitud.email],
+                                fail_silently=False,
+                            )
+                            print(f"✓ Email enviado")
+                        except Exception as e:
+                            print(f"✗ Error enviando email: {str(e)}")
+                            logger.exception(f"Error enviando email para solicitud {solicitud_id}: from={from_email} to={solicitud.email}")
+                            try:
+                                user.delete()
+                            except Exception:
+                                pass
+                            return Response(
+                                {'error': f'Error enviando credenciales por email: {str(e)}'},
+                                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                            )
+                    except Exception as e:
+                        print(f"✗ Error enviando email: {str(e)}")
+                        logger.exception(f"Error enviando email para solicitud {solicitud_id}")
+                        # Si falla el envío, revertir creación de usuario y devolver error
+                        try:
+                            user.delete()
+                        except Exception:
+                            pass
+                        return Response(
+                            {'error': f'Error enviando credenciales por email: {str(e)}'},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                        )
+
+                except Exception as e:
+                    print(f"✗ Error creando usuario: {str(e)}")
+                    logger.exception(f"Error creando usuario para solicitud {solicitud_id}")
+                    return Response(
+                        {'error': f'Error creando usuario: {str(e)}'},
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                    )
+
+            else:  # Estado rechazado
+                # Enviar email de rechazo
+                try:
+                    print(f"Enviando email de rechazo a: {solicitud.email}")
+                    from_email = (getattr(settings, 'DEFAULT_FROM_EMAIL', None) or
+                                  getattr(settings, 'EMAIL_HOST_USER', None) or
+                                  'no-reply@parkeaya.com')
+                    from_email = from_email.strip() if isinstance(from_email, str) else from_email
+                    try:
+                        send_mail(
+                            'Solicitud Rechazada - ParkEA',
+                            f'Hola {solicitud.nombre},\n\n'
+                            f'Lamentamos informarte que tu solicitud para "{solicitud.empresa}" ha sido RECHAZADA.\n\n'
+                            f'Motivo: {comentarios}\n\n'
+                            f'Si tienes alguna pregunta, por favor contacta con nuestro soporte.\n\n'
+                            f'Saludos,\nEquipo ParkEA',
+                            from_email,
+                            [solicitud.email],
+                            fail_silently=True,
+                        )
+                        print(f"✓ Email de rechazo enviado")
+                    except Exception as e:
+                        print(f"✗ Error enviando email de rechazo: {str(e)}")
+                        logger.warning(f"Error enviando email de rechazo para solicitud {solicitud_id}: {str(e)} from={from_email} to={solicitud.email}")
+                except Exception as e:
+                    # log error pero no revertir
+                    print(f"✗ Error enviando email de rechazo: {str(e)}")
+                    logger.warning(f"Error enviando email de rechazo para solicitud {solicitud_id}: {str(e)}")
+
+            solicitud.save()
+            print(f"✓ Solicitud guardada como {estado}")
+
+            return Response({
+                'message': f'Solicitud {estado} correctamente',
+                'solicitud': SolicitudAccesoOwnerSerializer(solicitud).data
+            })
+
+        print(f"Serializer errors: {serializer.errors}")
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    except Exception as exc:
+        tb_str = traceback.format_exc()
+        print(f"\n✗✗✗ EXCEPTION EN revisar_solicitud_owner ✗✗✗")
+        print(tb_str)
+        print(f"✗✗✗ FIN EXCEPTION ✗✗✗\n")
+        logger.exception(f"Exception en revisar_solicitud_owner para solicitud {solicitud_id}")
+        return Response(
+            {'error': 'Internal server error', 'details': str(exc)}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+def generar_username_unico(email):
+    """Genera un username único basado en el email"""
+    base_username = email.split('@')[0]
+    username = base_username
+    counter = 1
+    
+    while User.objects.filter(username=username).exists():
+        username = f"{base_username}{counter}"
+        counter += 1
+    
+    return username
+
+def generar_password_aleatoria(longitud=12):
+    """Genera una contraseña aleatoria segura"""
+    caracteres = string.ascii_letters + string.digits + "!@#$%"
+    return ''.join(secrets.choice(caracteres) for _ in range(longitud))

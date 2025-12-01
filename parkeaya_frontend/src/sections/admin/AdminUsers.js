@@ -11,11 +11,15 @@ const AdminUsers = () => {
     search: ''
   });
   const [selectedUsers, setSelectedUsers] = useState([]);
+  const [solicitudMap, setSolicitudMap] = useState({}); // cache: userId -> solicitudId
   const [actionLoading, setActionLoading] = useState(null);
   const [showParkingModal, setShowParkingModal] = useState(false);
   const [parkingList, setParkingList] = useState([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [createForm, setCreateForm] = useState({ username: '', email: '', password: '', rol: 'client' });
+  const [activeTab, setActiveTab] = useState('usuarios'); // Nueva pestaña
+  const [solicitudes, setSolicitudes] = useState([]); // Solicitudes de acceso
+  const [solicitudesLoading, setSolicitudesLoading] = useState(false);
 
   const API_BASE = 'http://localhost:8000/api';
 
@@ -149,6 +153,82 @@ const AdminUsers = () => {
     }
   };
 
+  // Cargar solicitudes de acceso
+  const loadSolicitudes = useCallback(async () => {
+    try {
+      setSolicitudesLoading(true);
+      const res = await fetch(`${API_BASE}/users/solicitudes/owner/`, {
+        method: 'GET',
+        headers: getAuthHeaders(),
+        credentials: 'include'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const items = Array.isArray(data) ? data : (data.results || []);
+        // Filtrar solo solicitudes pendientes
+        const pendientes = items.filter(s => s.estado === 'pendiente');
+        setSolicitudes(pendientes);
+      }
+    } catch (err) {
+      console.error('Error cargando solicitudes:', err);
+      setSolicitudes([]);
+    } finally {
+      setSolicitudesLoading(false);
+    }
+  }, [API_BASE]);
+
+  // Aprobar solicitud
+  const aprobarSolicitud = async (solicitudId, solicitud) => {
+    try {
+      setActionLoading(solicitudId);
+      const res = await fetch(`${API_BASE}/users/solicitudes/owner/${solicitudId}/revisar/`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        credentials: 'include',
+        body: JSON.stringify({ estado: 'aprobado' })
+      });
+      if (res.ok) {
+        alert(' Solicitud aprobada');
+        // Recargar solicitudes
+        loadSolicitudes();
+      } else {
+        alert(' Error al aprobar solicitud');
+      }
+    } catch (err) {
+      console.error('Error aprobando solicitud:', err);
+      alert('Error al aprobar solicitud');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Rechazar solicitud
+  const rechazarSolicitud = async (solicitudId, comentarios) => {
+    try {
+      setActionLoading(solicitudId);
+      const res = await fetch(`${API_BASE}/users/solicitudes/owner/${solicitudId}/revisar/`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        credentials: 'include',
+        body: JSON.stringify({ 
+          estado: 'rechazado',
+          comentarios_rechazo: comentarios
+        })
+      });
+      if (res.ok) {
+        alert('❌ Solicitud rechazada');
+        loadSolicitudes();
+      } else {
+        alert('Error al rechazar solicitud');
+      }
+    } catch (err) {
+      console.error('Error rechazando solicitud:', err);
+      alert('Error al rechazar solicitud');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const handleCreateUser = async () => {
     try {
       setActionLoading('create');
@@ -184,19 +264,38 @@ const AdminUsers = () => {
   const handleUserAction = async (userId, action) => {
     try {
       setActionLoading(userId);
+      // Primero recuperar el objeto usuario para este id
+      const user = users.find(u => u.id === userId);
+
+      // Si es una solicitud pendiente de owner, usar el endpoint de solicitudes
+      if (user && user.rol === 'owner' && user.document_status === 'pending' && (action === 'approve' || action === 'reject')) {
+        // Obtener solicitudId (cache o fetch)
+        const solicitudId = await getSolicitudIdForUser(user);
+        if (!solicitudId) {
+          alert('No se encontró la solicitud asociada al usuario');
+          setActionLoading(null);
+          return;
+        }
+
+        if (action === 'approve') {
+          await revisarSolicitud(solicitudId, 'aprobada');
+        } else {
+          // pedir motivo de rechazo
+          const motivo = prompt('Ingrese motivo de rechazo (opcional):', 'Documentación incompleta');
+          await revisarSolicitud(solicitudId, 'rechazada', motivo || '');
+        }
+
+        await loadUsers();
+        setSelectedUsers([]);
+        setActionLoading(null);
+        return;
+      }
+
       // Mapear acciones a PATCH sobre el recurso de usuario (AdminUserViewSet soporta PATCH/PUT)
       const endpoint = `${API_BASE}/users/admin/users/${userId}/`;
       let body = {};
 
       switch(action) {
-        case 'approve':
-          // Marcar como activo/aprobado
-          body = { is_active: true, activo: true };
-          break;
-        case 'reject':
-          // Desactivar (rechazar registro)
-          body = { is_active: false, activo: false };
-          break;
         case 'activate':
           body = { is_active: true, activo: true };
           break;
@@ -226,6 +325,66 @@ const AdminUsers = () => {
     } catch (error) {
       console.error(`Error en acción ${action}:`, error);
       alert('Error al procesar la acción');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  // Busca y cachea la solicitud asociada a un usuario (por email)
+  const getSolicitudIdForUser = async (user) => {
+    // usar cache
+    if (solicitudMap[user.id]) return solicitudMap[user.id];
+
+    try {
+      // El backend lista solicitudes por estado; pedimos las pendientes y filtramos por email
+      const res = await fetch(`${API_BASE}/users/solicitudes/owner/?estado=pendiente`, {
+        method: 'GET',
+        headers: getAuthHeaders(),
+        credentials: 'include'
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const items = Array.isArray(data) ? data : (data.results || data);
+      if (!items || items.length === 0) return null;
+      const solicitud = items.find(s => (s.email || '').toLowerCase() === (user.email || '').toLowerCase());
+      if (!solicitud) return null;
+      const id = solicitud.id || solicitud.solicitud_id || solicitud.pk;
+      if (id) {
+        setSolicitudMap(prev => ({ ...prev, [user.id]: id }));
+        return id;
+      }
+      return null;
+    } catch (err) {
+      console.error('Error obteniendo solicitud para usuario', err);
+      return null;
+    }
+  };
+
+  // Llama al endpoint de revisar solicitud (PUT/PATCH)
+  const revisarSolicitud = async (solicitudId, estado, comentarios = '') => {
+    try {
+      setActionLoading(solicitudId);
+      const endpoint = `${API_BASE}/users/solicitudes/owner/${solicitudId}/revisar/`;
+      const body = { estado };
+      if (comentarios) body.comentarios_rechazo = comentarios;
+
+      // Backend espera POST para revisar (según implementation en views.py)
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        credentials: 'include',
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) {
+        let errText = '';
+        try { errText = JSON.stringify(await res.json()); } catch(e) { errText = await res.text(); }
+        alert(`Error al actualizar solicitud: ${res.status} ${errText}`);
+      } else {
+        alert(`Solicitud ${estado}`);
+      }
+    } catch (err) {
+      console.error('Error revisando solicitud', err);
+      alert('Error revisando la solicitud');
     } finally {
       setActionLoading(null);
     }
@@ -276,30 +435,49 @@ const AdminUsers = () => {
         </div>
       </div>
 
-      {/*  RESUMEN ESTADÍSTICAS */}
-      <div className="users-stats">
-        <div className="stat-card">
-          <div className="stat-value">{users.length}</div>
-          <div className="stat-label">Total Usuarios</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-value">{users.filter(u => u.rol === 'owner').length}</div>
-          <div className="stat-label">Propietarios</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-value">{users.filter(u => u.rol  === 'client').length}</div>
-          <div className="stat-label">Clientes</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-value">
-            {users.filter(u => (u.rol === 'owner' || u.role === 'owner') && u.document_status === 'pending').length}
-          </div>
-          <div className="stat-label">Pendientes Aprobación</div>
-        </div>
+      {/* PESTAÑAS */}
+      <div className="admin-tabs">
+        <button 
+          className={`tab-button ${activeTab === 'usuarios' ? 'active' : ''}`}
+          onClick={() => setActiveTab('usuarios')}
+        >
+          <i className="fas fa-users"></i> Usuarios
+        </button>
+        <button 
+          className={`tab-button ${activeTab === 'solicitudes' ? 'active' : ''}`}
+          onClick={() => { setActiveTab('solicitudes'); loadSolicitudes(); }}
+        >
+          <i className="fas fa-file-alt"></i> Solicitudes de Acceso
+          {solicitudes.length > 0 && <span className="badge">{solicitudes.length}</span>}
+        </button>
       </div>
 
-      {/*  FILTROS Y ACCIONES */}
-      <div className="users-controls">
+      {/*  RESUMEN ESTADÍSTICAS - Solo usuarios */}
+      {activeTab === 'usuarios' && (
+      <div>
+        <div className="users-stats">
+          <div className="stat-card">
+            <div className="stat-value">{users.length}</div>
+            <div className="stat-label">Total Usuarios</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-value">{users.filter(u => u.rol === 'owner').length}</div>
+            <div className="stat-label">Propietarios</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-value">{users.filter(u => u.rol  === 'client').length}</div>
+            <div className="stat-label">Clientes</div>
+          </div>
+          <div className="stat-card">
+            <div className="stat-value">
+              {users.filter(u => (u.rol === 'owner' || u.role === 'owner') && u.document_status === 'pending').length}
+            </div>
+            <div className="stat-label">Pendientes Aprobación</div>
+          </div>
+        </div>
+
+        {/*  FILTROS Y ACCIONES - Solo usuarios */}
+        <div className="users-controls">
         <div className="filters-section">
           <div className="filter-group">
             <label>Filtrar por Rol:</label>
@@ -360,10 +538,9 @@ const AdminUsers = () => {
             </div>
           </div>
         )}
-      </div>
+        </div>
 
-      {/*  TABLA DE USUARIOS */}
-      <div className="users-table-container">
+        <div className="users-table-container">
         <table className="users-table">
           <thead>
             <tr>
@@ -478,6 +655,7 @@ const AdminUsers = () => {
             })}
           </tbody>
         </table>
+        </div>
 
         {/* Modal: Parkings del usuario */}
         {showParkingModal && (
@@ -540,8 +718,78 @@ const AdminUsers = () => {
           </div>
         )}
       </div>
+      )}
 
-      
+      {/* SECCIÓN DE SOLICITUDES DE ACCESO */}
+      {activeTab === 'solicitudes' && (
+        <div className="solicitudes-section">
+        <div className="solicitudes-header">
+          <h2>Solicitudes de Acceso Pendientes</h2>
+          <button onClick={loadSolicitudes} className="refresh-btn">
+            <i className="fas fa-sync"></i> Actualizar
+          </button>
+        </div>
+
+        {solicitudesLoading ? (
+          <div className="loading">Cargando solicitudes...</div>
+        ) : solicitudes.length === 0 ? (
+          <div className="no-solicitudes">
+            <i className="fas fa-inbox"></i>
+            <p>No hay solicitudes de acceso pendientes</p>
+          </div>
+        ) : (
+          <div className="solicitudes-table-container">
+            <table className="solicitudes-table">
+              <thead>
+                <tr>
+                  <th>Nombre</th>
+                  <th>Email</th>
+                  <th>Teléfono</th>
+                  <th>Empresa</th>
+                  <th>Ciudad</th>
+                  <th>Mensaje</th>
+                  <th>Fecha Solicitud</th>
+                  <th>Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {solicitudes.map(sol => (
+                  <tr key={sol.id}>
+                    <td><strong>{sol.nombre}</strong></td>
+                    <td>{sol.email}</td>
+                    <td>{sol.telefono}</td>
+                    <td>{sol.empresa}</td>
+                    <td>{sol.ciudad || '-'}</td>
+                    <td className="mensaje-cell">
+                      <div className="mensaje-preview">{sol.mensaje}</div>
+                    </td>
+                    <td>{new Date(sol.fecha_solicitud).toLocaleDateString()}</td>
+                    <td>
+                      <div className="action-buttons">
+                        <button 
+                          className="btn-approve"
+                          onClick={() => aprobarSolicitud(sol.id, sol)}
+                          disabled={actionLoading === sol.id}
+                        >
+                          {actionLoading === sol.id ? '...' : '✓ Aprobar'}
+                        </button>
+                        <button 
+                          className="btn-reject"
+                          onClick={() => rechazarSolicitud(sol.id, 'Solicitud rechazada')}
+                          disabled={actionLoading === sol.id}
+                        >
+                          {actionLoading === sol.id ? '...' : '✗ Rechazar'}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      )}
     </div>
   );
 };

@@ -143,3 +143,42 @@ class Car(models.Model):
     class Meta:
         verbose_name = 'Vehículo'
         verbose_name_plural = 'Vehículos'
+
+
+#solicitud
+class SolicitudAccesoOwner(models.Model):
+    ESTADO_CHOICES = (
+        ('pendiente', 'Pendiente'),
+        ('aprobado', 'Aprobado'),
+        ('rechazado', 'Rechazado'),
+    )
+    #campos del formulario
+    nombre = models.CharField(max_length=200)
+    email = models.EmailField(unique=True)
+    telefono = models.CharField(max_length=20)
+    empresa = models.CharField(max_length=200)  # nombre del estacionamiento
+    mensaje = models.TextField(blank=True)
+    
+    # Metadatos
+    estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='pendiente')
+    fecha_solicitud = models.DateTimeField(auto_now_add=True)
+    fecha_revision = models.DateTimeField(null=True, blank=True)
+    revisado_por = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='solicitudes_acceso_owner_revisadas'  
+    )
+    comentarios_rechazo = models.TextField(blank=True)
+    
+    # Usuario creado (si se aprueba)
+    usuario_creado = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='solicitud_origen')
+    
+    def __str__(self):
+        return f"{self.empresa} - {self.email}"
+    
+    class Meta:
+        verbose_name = 'Solicitud de Acceso Owner'
+        verbose_name_plural = 'Solicitudes de Acceso Owner'
+        ordering = ['-fecha_solicitud']

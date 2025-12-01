@@ -4,9 +4,10 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     MyTokenObtainPairView, RegisterClientView, RegisterOwnerView,
     AdminUserViewSet, OwnerUserViewSet, ClientUserViewSet, CarViewSet,
-    admin_panel_login, get_user_profile, update_user_profile, check_panel_access,  # ✅ Agregar update_user_profile
+    admin_panel_login, get_user_profile, revisar_solicitud_owner, update_user_profile, check_panel_access,  # ✅ Agregar update_user_profile
     admin_dashboard_stats, owner_dashboard_stats, client_dashboard_stats,
-    change_own_password
+    change_own_password,
+    solicitar_acceso_owner, listar_solicitudes_pendientes, revisar_solicitud_owner
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 
@@ -55,4 +56,7 @@ urlpatterns = [
     
     # Ruta específica para owner
     path('owner/me/', OwnerUserViewSet.as_view({'get': 'me', 'put': 'me'}), name='owner-me'),
+    path('solicitudes/owner/solicitar/', solicitar_acceso_owner, name='solicitar-acceso-owner'),
+    path('solicitudes/owner/', listar_solicitudes_pendientes, name='listar-solicitudes'),
+    path('solicitudes/owner/<int:solicitud_id>/revisar/', revisar_solicitud_owner, name='revisar-solicitud-owner'),
 ]

@@ -38,13 +38,20 @@ INSTALLED_APPS = [
     'analytic',
 ]
 
-SITE_ID = 1
-EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-EMAIL_HOST = "smtp.gmail.com"
+# Gmail SMTP Configuration
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = "admi@gmail.com"
-EMAIL_HOST_PASSWORD = "admi1234"
+EMAIL_HOST_USER = 'josefina.grados@tecsup.edu.pe'
+EMAIL_HOST_PASSWORD = 'feadfhohhuljmfob'
+DEFAULT_FROM_EMAIL = 'josefina.grados@tecsup.edu.pe'
+SERVER_EMAIL = 'josefina.grados@tecsup.edu.pe'
+
+# URL para los emails
+FRONTEND_URL = 'http://localhost:3000'  # Cambia por tu dominio
+
+SITE_ID = 1
 
 NOTIFICATIONS = {
     'DEFAULT_ICON': 'fas fa-bell',
@@ -117,9 +124,9 @@ WSGI_APPLICATION = 'parkeaya.wsgi.application'
 DATABASES = {
     'default': {
        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'parkeya_db',
+        'NAME': 'parkeaya_db',
         'USER': 'postgres',
-        'PASSWORD': 'katherin859!',
+        'PASSWORD': '1234',
         'HOST': 'localhost',
         'PORT': '5432',
     }
