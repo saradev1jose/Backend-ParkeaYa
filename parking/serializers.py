@@ -11,9 +11,19 @@ User = get_user_model()
 # Serializers Base
 # ----------------------------
 class ParkingImageSerializer(serializers.ModelSerializer):
+    imagen_url = serializers.SerializerMethodField()
+    
     class Meta:
         model = ParkingImage
-        fields = ['id', 'imagen', 'descripcion', 'creado_en']
+        fields = ['id', 'imagen', 'imagen_url', 'descripcion', 'creado_en']
+
+    def get_imagen_url(self, obj):
+        if obj.imagen:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.imagen.url)
+            return obj.imagen.url
+        return None
 
 
 class ParkingApprovalImageSerializer(serializers.ModelSerializer):
@@ -23,10 +33,15 @@ class ParkingApprovalImageSerializer(serializers.ModelSerializer):
 
 class ParkingReviewSerializer(serializers.ModelSerializer):
     usuario_nombre = serializers.CharField(source='usuario.username', read_only=True)
+    # ✅ permitir enviar el id del estacionamiento al crear la reseña
+    estacionamiento = serializers.PrimaryKeyRelatedField(queryset=ParkingLot.objects.all(), required=True)
 
     class Meta:
         model = ParkingReview
-        fields = ['id', 'usuario', 'usuario_nombre', 'calificacion', 'comentario', 'fecha']
+        fields = [
+            'id', 'usuario', 'usuario_nombre', 'estacionamiento', 'calificacion', 'comentario', 'fecha',
+            'activo', 'reportado', 'motivo_reporte'
+        ]
         read_only_fields = ['usuario', 'fecha']
 
 # ----------------------------
@@ -63,21 +78,12 @@ class ParkingLotBaseSerializer(serializers.ModelSerializer):
             return 0
         return round(((obj.total_plazas - obj.plazas_disponibles) / obj.total_plazas) * 100, 2)
 
-class ParkingLotSerializer(ParkingLotBaseSerializer):
-    imagen_principal = serializers.ImageField(read_only=True)
-    class Meta(ParkingLotBaseSerializer.Meta):
-        model = ParkingLot
-    
-    telefono = serializers.CharField(
-        validators=[
-            RegexValidator(
-                regex=r'^\+?1?\d{9,15}$',
-                message="Número de teléfono inválido."
-            )
-        ]
-    )
 
-    class Meta:
+class ParkingLotSerializer(ParkingLotBaseSerializer):
+    imagen_principal = serializers.SerializerMethodField()
+    imagenes = serializers.SerializerMethodField(read_only=True)
+    
+    class Meta(ParkingLotBaseSerializer.Meta):
         model = ParkingLot
         fields = [
             'id', 'dueno', 'dueno_nombre', 'nombre', 'direccion',
@@ -85,9 +91,42 @@ class ParkingLotSerializer(ParkingLotBaseSerializer):
             'nivel_seguridad', 'descripcion', 'coordenadas',
             'horario_apertura', 'horario_cierre', 'telefono',
             'rating_promedio', 'imagen_principal','total_reseñas', 'esta_abierto',
-            'porcentaje_ocupacion', 'aprobado', 'activo'
+            'porcentaje_ocupacion', 'aprobado', 'activo', 'imagenes'
         ]
-        read_only_fields = ['rating_promedio', 'total_reseñas']
+        read_only_fields = ['rating_promedio', 'total_reseñas', 'imagenes', 'dueno']
+
+    def get_imagen_principal(self, obj):
+        """Obtener la primera imagen como imagen principal"""
+        imagen_principal = obj.imagenes.first()
+        if imagen_principal and imagen_principal.imagen:
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(imagen_principal.imagen.url)
+            return imagen_principal.imagen.url
+        return None
+
+    def get_imagenes(self, obj):
+        """Obtener todas las imágenes con URLs absolutas"""
+        imagenes = obj.imagenes.all()
+        if not imagenes.exists():
+            return []
+        
+        request = self.context.get('request')
+        images_data = []
+        
+        for img in imagenes:
+            imagen_url = img.imagen.url
+            if request:
+                imagen_url = request.build_absolute_uri(imagen_url)
+            
+            images_data.append({
+                'id': img.id,
+                'imagen_url': imagen_url,
+                'descripcion': img.descripcion,
+                'creado_en': img.creado_en
+            })
+        
+        return images_data
 
     def get_porcentaje_ocupacion(self, obj):
         if obj.total_plazas > 0:
@@ -96,21 +135,66 @@ class ParkingLotSerializer(ParkingLotBaseSerializer):
 
 class ParkingLotClientSerializer(ParkingLotBaseSerializer):
     """Serializer para clientes - solo información pública"""
+    imagenes = ParkingImageSerializer(many=True, read_only=True)
+    imagen_principal = serializers.SerializerMethodField()
+    
     class Meta(ParkingLotBaseSerializer.Meta):
         fields = [field for field in ParkingLotBaseSerializer.Meta.fields 
-                 if field not in ['dueno', 'dueno_nombre']]
+                 if field not in ['dueno', 'dueno_nombre']] + ['imagenes', 'imagen_principal']
+
+    def get_imagen_principal(self, obj):
+        """Obtener la imagen principal del modelo"""
+        # PRIMERO: Usar el campo imagen_principal del modelo si existe
+        if getattr(obj, 'imagen_principal', None) and hasattr(obj.imagen_principal, 'url'):
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.imagen_principal.url)
+            return obj.imagen_principal.url
+        
+        # SEGUNDO: Fallback a la primera imagen de la galería
+        imagen_principal = obj.imagenes.first()
+        if imagen_principal and getattr(imagen_principal, 'imagen', None):
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(imagen_principal.imagen.url)
+            return imagen_principal.imagen.url
+        
+        return None
 
 class ParkingLotOwnerSerializer(ParkingLotBaseSerializer):
     """Serializer para dueños - información completa de SU estacionamiento"""
-    imagenes = ParkingImageSerializer(many=True, read_only=True)
+    imagenes = serializers.SerializerMethodField(read_only=True)
     reseñas = ParkingReviewSerializer(many=True, read_only=True)
 
     class Meta(ParkingLotBaseSerializer.Meta):
         fields = ParkingLotBaseSerializer.Meta.fields + ['imagenes', 'reseñas']
 
+    def get_imagenes(self, obj):
+        """Obtener todas las imágenes con URLs absolutas"""
+        imagenes = obj.imagenes.all()
+        if not imagenes.exists():
+            return []
+        
+        request = self.context.get('request')
+        images_data = []
+        
+        for img in imagenes:
+            imagen_url = img.imagen.url
+            if request:
+                imagen_url = request.build_absolute_uri(imagen_url)
+            
+            images_data.append({
+                'id': img.id,
+                'imagen_url': imagen_url,
+                'descripcion': img.descripcion,
+                'creado_en': img.creado_en
+            })
+        
+        return images_data
+
 class ParkingLotAdminSerializer(ParkingLotBaseSerializer):
     """Serializer para administradores - información completa + gestión"""
-    imagenes = ParkingImageSerializer(many=True, read_only=True)
+    imagenes = serializers.SerializerMethodField(read_only=True)
     reseñas = ParkingReviewSerializer(many=True, read_only=True)
     dueno_email = serializers.CharField(source='dueno.email', read_only=True)
     dueno_telefono = serializers.CharField(source='dueno.telefono', read_only=True)
@@ -120,11 +204,35 @@ class ParkingLotAdminSerializer(ParkingLotBaseSerializer):
             'imagenes', 'reseñas', 'dueno_email', 'dueno_telefono'
         ]
 
+    def get_imagenes(self, obj):
+        """Obtener todas las imágenes con URLs absolutas"""
+        imagenes = obj.imagenes.all()
+        if not imagenes.exists():
+            return []
+        
+        request = self.context.get('request')
+        images_data = []
+        
+        for img in imagenes:
+            imagen_url = img.imagen.url
+            if request:
+                imagen_url = request.build_absolute_uri(imagen_url)
+            
+            images_data.append({
+                'id': img.id,
+                'imagen_url': imagen_url,
+                'descripcion': img.descripcion,
+                'creado_en': img.creado_en
+            })
+        
+        return images_data
+
 class ParkingLotListSerializer(serializers.ModelSerializer):
-    """Serializer para listas - optimizado para performance"""
+    """Serializer para listas - optimizado para performance - INCLUYE IMÁGENES"""
     esta_abierto = serializers.BooleanField(read_only=True)
     imagen_principal = serializers.SerializerMethodField()
     porcentaje_ocupacion = serializers.SerializerMethodField()
+    imagenes = serializers.SerializerMethodField()
 
     class Meta:
         model = ParkingLot
@@ -132,18 +240,58 @@ class ParkingLotListSerializer(serializers.ModelSerializer):
             'id', 'nombre', 'direccion', 'tarifa_hora', 'plazas_disponibles',
             'nivel_seguridad', 'coordenadas', 'esta_abierto',
             'rating_promedio', 'imagen_principal', 'porcentaje_ocupacion',
-            'aprobado', 'activo'
+            'aprobado', 'activo', 'imagenes'
         ]
 
     def get_imagen_principal(self, obj):
+        """Obtener la imagen principal del modelo"""
+        # PRIMERO: Usar el campo imagen_principal del modelo
+        if getattr(obj, 'imagen_principal', None) and hasattr(obj.imagen_principal, 'url'):
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(obj.imagen_principal.url)
+            return obj.imagen_principal.url
+        
+        # SEGUNDO: Fallback a la primera imagen de la galería
         imagen_principal = obj.imagenes.first()
-        if imagen_principal:
+        if imagen_principal and getattr(imagen_principal, 'imagen', None):
+            request = self.context.get('request')
+            if request:
+                return request.build_absolute_uri(imagen_principal.imagen.url)
             return imagen_principal.imagen.url
+        
         return None
 
+    def get_imagenes(self, obj):
+        """Obtener todas las imágenes del parking"""
+        imagenes = obj.imagenes.all()
+        if not imagenes.exists():
+            return []
+        
+        request = self.context.get('request')
+        images_data = []
+        
+        for img in imagenes:
+            # Usar img.imagen.url en lugar de img.imagen.name
+            if getattr(img, 'imagen', None) and hasattr(img.imagen, 'url'):
+                imagen_url = img.imagen.url
+                if request:
+                    imagen_url = request.build_absolute_uri(imagen_url)
+                
+                images_data.append({
+                    'id': img.id,
+                    'imagen': img.imagen.name if img.imagen else None,
+                    'imagen_url': imagen_url,
+                    'descripcion': img.descripcion,
+                    'creado_en': img.creado_en.strftime('%Y-%m-%d %H:%M:%S') if img.creado_en else None
+                })
+        
+        return images_data
+
     def get_porcentaje_ocupacion(self, obj):
+        """Calcular porcentaje de ocupación"""
         if obj.total_plazas > 0:
-            return ((obj.total_plazas - obj.plazas_disponibles) / obj.total_plazas) * 100
+            return round(((obj.total_plazas - obj.plazas_disponibles) / obj.total_plazas) * 100, 2)
         return 0
 
 
@@ -264,3 +412,21 @@ class ApprovalStatisticsSerializer(serializers.Serializer):
     aprobadas = serializers.IntegerField()
     rechazadas = serializers.IntegerField()
     tasa_aprobacion = serializers.FloatField()
+
+# Agrega esto a tu parking/serializers.py
+
+class ParkingImageUploadSerializer(serializers.Serializer):
+    """Serializer específico para subir imágenes al parking"""
+    imagenes = serializers.ListField(
+        child=serializers.ImageField(
+            max_length=100000,
+            allow_empty_file=False,
+            use_url=False
+        ),
+        write_only=True,
+        required=True
+    )
+
+    def create(self, validated_data):
+        # Este método no se usa directamente, las imágenes se crean en la view
+        return validated_data

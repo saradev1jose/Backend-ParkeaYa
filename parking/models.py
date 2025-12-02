@@ -7,7 +7,7 @@ from decimal import Decimal
 
 
 class ParkingLot(models.Model):
-    # Opciones para nivel de seguridad - NUEVO
+
     NIVEL_SEGURIDAD_CHOICES = [
         ('Básico', 'Básico'),
         ('Estándar', 'Estándar'),
@@ -99,6 +99,21 @@ class ParkingLot(models.Model):
             costo = precio_base_por_minuto * duracion_minutos * multiplicador
 
         return Decimal(str(round(costo, 2)))
+    
+    precio_dia = models.DecimalField(
+        max_digits=8, 
+        decimal_places=2, 
+        null=True, 
+        blank=True,
+        help_text="Precio por día completo (24 horas)"
+    )
+    precio_mes = models.DecimalField(
+        max_digits=8, 
+        decimal_places=2, 
+        null=True, 
+        blank=True,
+        help_text="Precio por mes completo (30 días)"
+    )
 
 
 class ParkingImage(models.Model):
@@ -119,6 +134,11 @@ class ParkingReview(models.Model):
     comentario = models.TextField(blank=True)
     calificacion = models.PositiveIntegerField(validators=[MinValueValidator(1), MaxValueValidator(5)])
     fecha = models.DateTimeField(auto_now_add=True)
+
+    # CAMBIO: eliminar 'aprobado' y agregar campos de moderación
+    activo = models.BooleanField(default=True)  # visible públicamente por defecto
+    reportado = models.BooleanField(default=False)
+    motivo_reporte = models.TextField(blank=True, null=True)
 
     class Meta:
         unique_together = ('usuario', 'estacionamiento')

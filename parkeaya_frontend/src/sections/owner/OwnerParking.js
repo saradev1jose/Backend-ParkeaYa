@@ -28,10 +28,10 @@ const OwnerParking = ({ userRole }) => {
     try {
       setLoading(true);
       setError(null);
-      
+
       console.log('🏢 Cargando datos del estacionamiento...');
-      
-     
+
+
       const response = await fetch(`${API_BASE}/parking/my-parkings/`, {
         method: 'GET',
         headers: getAuthHeaders()
@@ -42,10 +42,10 @@ const OwnerParking = ({ userRole }) => {
       if (response.ok) {
         const data = await response.json();
         console.log(' Datos del estacionamiento recibidos:', data);
-        
+
         // Procesar la respuesta según la estructura real
         let parking = null;
-        
+
         if (Array.isArray(data) && data.length > 0) {
           parking = data[0];
         } else if (data.results && data.results.length > 0) {
@@ -53,7 +53,7 @@ const OwnerParking = ({ userRole }) => {
         } else if (data.id) {
           parking = data; // Si es un objeto directo
         }
-        
+
         if (parking) {
           console.log('✅ Estacionamiento encontrado:', parking);
           setParkingData(parking);
@@ -97,13 +97,13 @@ const OwnerParking = ({ userRole }) => {
     try {
       //  Este endpoint probablemente no existe - usamos datos simulados por ahora
       console.log(' Endpoint de spots no implementado, usando datos de ejemplo');
-      
-      
+
+
       if (parkingData) {
         const exampleSpots = [];
         const totalSpots = parkingData.total_plazas || 10;
         const availableSpots = parkingData.plazas_disponibles || 5;
-        
+
         for (let i = 1; i <= totalSpots; i++) {
           exampleSpots.push({
             id: i,
@@ -130,7 +130,7 @@ const OwnerParking = ({ userRole }) => {
 
       console.log(' Guardando cambios...', formData);
 
-      
+
       const response = await fetch(`${API_BASE}/parking/parkings/${parkingData.id}/`, {
         method: 'PUT',
         headers: getAuthHeaders(),
@@ -155,7 +155,7 @@ const OwnerParking = ({ userRole }) => {
         setParkingData(updatedData);
         setEditing(false);
         alert('Cambios guardados exitosamente');
-        
+
         // Recargar datos para asegurar consistencia
         loadParkingData();
       } else {
@@ -234,15 +234,15 @@ const OwnerParking = ({ userRole }) => {
 
   const handleSpotAction = async (spotId, action) => {
     try {
-      switch(action) {
+      switch (action) {
         case 'toggle_maintenance':
           // Simular cambio de estado
-          setSpots(prev => prev.map(spot => 
-            spot.id === spotId 
-              ? { 
-                  ...spot, 
-                  status: spot.status === 'maintenance' ? 'available' : 'maintenance' 
-                } 
+          setSpots(prev => prev.map(spot =>
+            spot.id === spotId
+              ? {
+                ...spot,
+                status: spot.status === 'maintenance' ? 'available' : 'maintenance'
+              }
               : spot
           ));
           alert(`Espacio ${spotId} ${action === 'maintenance' ? 'en mantenimiento' : 'disponible'}`);
@@ -352,7 +352,7 @@ const OwnerParking = ({ userRole }) => {
         </div>
         <div className="header-actions">
           {!editing ? (
-            <button 
+            <button
               className="btn-edit"
               onClick={() => setEditing(true)}
             >
@@ -376,28 +376,28 @@ const OwnerParking = ({ userRole }) => {
 
       {/* PESTAÑAS */}
       <div className="parking-tabs">
-        <button 
+        <button
           className={`tab-btn ${activeTab === 'info' ? 'active' : ''}`}
           onClick={() => setActiveTab('info')}
         >
           <i className="fas fa-info-circle"></i>
           Información General
         </button>
-        <button 
+        <button
           className={`tab-btn ${activeTab === 'spots' ? 'active' : ''}`}
           onClick={() => setActiveTab('spots')}
         >
           <i className="fas fa-parking"></i>
           Espacios ({spots.length})
         </button>
-        <button 
+        <button
           className={`tab-btn ${activeTab === 'rates' ? 'active' : ''}`}
           onClick={() => setActiveTab('rates')}
         >
           <i className="fas fa-money-bill-wave"></i>
           Tarifas
         </button>
-        <button 
+        <button
           className={`tab-btn ${activeTab === 'settings' ? 'active' : ''}`}
           onClick={() => setActiveTab('settings')}
         >
@@ -488,8 +488,8 @@ const OwnerParking = ({ userRole }) => {
                       />
                     ) : (
                       <p className="info-value">
-                        {parkingData?.horario_apertura ? 
-                          `Abre: ${parkingData.horario_apertura}` : 
+                        {parkingData?.horario_apertura ?
+                          `Abre: ${parkingData.horario_apertura}` :
                           '24 horas'}
                       </p>
                     )}
@@ -505,14 +505,14 @@ const OwnerParking = ({ userRole }) => {
                       />
                     ) : (
                       <p className="info-value">
-                        {parkingData?.horario_cierre ? 
-                          `Cierra: ${parkingData.horario_cierre}` : 
+                        {parkingData?.horario_cierre ?
+                          `Cierra: ${parkingData.horario_cierre}` :
                           '24 horas'}
                       </p>
                     )}
                   </div>
                 </div>
-                
+
                 <div className="form-group">
                   <label>Nivel de Seguridad</label>
                   {editing ? (
@@ -565,10 +565,10 @@ const OwnerParking = ({ userRole }) => {
                     )}
                   </div>
                 </div>
-                
+
                 {parkingData?.total_plazas > 0 && (
                   <div className="capacity-bar">
-                    <div 
+                    <div
                       className="capacity-fill"
                       style={{
                         width: `${((parkingData.total_plazas - parkingData.plazas_disponibles) / parkingData.total_plazas) * 100}%`
@@ -600,7 +600,7 @@ const OwnerParking = ({ userRole }) => {
                   <div className="status-item">
                     <span className="status-label">Calificación:</span>
                     <span className="status-value rating">
-                      ⭐ {parkingData?.rating_promedio || '0.00'} 
+                      ⭐ {parkingData?.rating_promedio || '0.00'}
                       {parkingData?.total_reseñas > 0 && ` (${parkingData.total_reseñas} reseñas)`}
                     </span>
                   </div>
@@ -641,7 +641,7 @@ const OwnerParking = ({ userRole }) => {
                 {spots.map(spot => {
                   const statusInfo = getSpotStatusBadge(spot.status);
                   const typeInfo = getSpotTypeBadge(spot.type);
-                  
+
                   return (
                     <div key={spot.id} className={`spot-card ${spot.status}`}>
                       <div className="spot-header">
@@ -664,14 +664,14 @@ const OwnerParking = ({ userRole }) => {
                       </div>
 
                       <div className="spot-actions">
-                        <button 
+                        <button
                           className={`btn-action maintenance ${spot.status === 'maintenance' ? 'active' : ''}`}
                           onClick={() => handleSpotAction(spot.id, 'toggle_maintenance')}
                           title={spot.status === 'maintenance' ? 'Quitar mantenimiento' : 'Poner en mantenimiento'}
                         >
                           <i className="fas fa-tools"></i>
                         </button>
-                        <button 
+                        <button
                           className="btn-action edit"
                           onClick={() => handleSpotAction(spot.id, 'edit')}
                           title="Editar"
@@ -756,8 +756,8 @@ const OwnerParking = ({ userRole }) => {
                       {parkingData?.activo ? 'Activo' : 'Inactivo'}
                     </span>
                     <span className="toggle-note">
-                      {parkingData?.activo ? 
-                        'Aparece en las búsquedas' : 
+                      {parkingData?.activo ?
+                        'Aparece en las búsquedas' :
                         'No aparece en las búsquedas'}
                     </span>
                   </div>
@@ -776,16 +776,16 @@ const OwnerParking = ({ userRole }) => {
                     <div className="info-item">
                       <span className="info-label">Fecha de Registro:</span>
                       <span className="info-value">
-                        {parkingData?.fecha_creacion ? 
-                          new Date(parkingData.fecha_creacion).toLocaleDateString() : 
+                        {parkingData?.fecha_creacion ?
+                          new Date(parkingData.fecha_creacion).toLocaleDateString() :
                           'No disponible'}
                       </span>
                     </div>
                     <div className="info-item">
                       <span className="info-label">Última Actualización:</span>
                       <span className="info-value">
-                        {parkingData?.fecha_actualizacion ? 
-                          new Date(parkingData.fecha_actualizacion).toLocaleDateString() : 
+                        {parkingData?.fecha_actualizacion ?
+                          new Date(parkingData.fecha_actualizacion).toLocaleDateString() :
                           'No disponible'}
                       </span>
                     </div>

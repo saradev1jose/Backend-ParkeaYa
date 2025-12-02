@@ -7,7 +7,11 @@ from .views import (
     admin_panel_login, get_user_profile, revisar_solicitud_owner, update_user_profile, check_panel_access,  # ✅ Agregar update_user_profile
     admin_dashboard_stats, owner_dashboard_stats, client_dashboard_stats,
     change_own_password,
-    solicitar_acceso_owner, listar_solicitudes_pendientes, revisar_solicitud_owner
+    solicitar_acceso_owner, listar_solicitudes_pendientes, revisar_solicitud_owner,
+
+    admin_panel_login, get_user_profile, update_user_profile, check_panel_access,
+    admin_dashboard_stats, owner_dashboard_stats, client_dashboard_stats,
+    change_own_password, change_password
 )
 from rest_framework_simplejwt.views import TokenRefreshView
 
@@ -31,7 +35,7 @@ urlpatterns = [
     path('panel/login/', admin_panel_login, name='admin-panel-login'),
     path('panel/check-access/', check_panel_access, name='check-panel-access'),
     
-    #  RUTAS ACTUALIZADAS PARA PERFIL
+    # RUTAS ACTUALIZADAS PARA PERFIL
     # Perfil - GET
     path('profile/', get_user_profile, name='user-profile'),
     # Actualizar perfil - PUT/PATCH
@@ -45,13 +49,13 @@ urlpatterns = [
     # Incluir las rutas del router
     path('', include(router.urls)),
     
-    # Cambiar contraseña (usuario autenticado)
+    # Cambiar contraseña - Ambas vistas disponibles
     path('profile/change-password/', change_own_password, name='change-own-password'),
+    path('change-password/', change_password, name='change-password'),
+    
     # Rutas de compatibilidad (legacy)
     path('users/profile/', get_user_profile, name='user-profile-compat'),
-    # Compatibilidad UPDATE perfil
     path('users/profile/update/', update_user_profile, name='user-profile-update-compat'),
-    # Compatibilidad cambiar contraseña
     path('users/profile/change-password/', change_own_password, name='user-change-password-compat'),
     
     # Ruta específica para owner

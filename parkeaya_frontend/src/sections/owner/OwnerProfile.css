@@ -1402,3 +1402,244 @@
     width: 100%;
   }
 }
+
+/* ============================================
+   MODAL: VER DETALLES - MEJORAS DE IMÁGENES
+   ============================================ */
+
+.parking-view-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.parking-view-modal .modal-content {
+  background: #1a2332;
+  border-radius: 12px;
+  max-width: 900px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.parking-view-modal .modal-header {
+  padding: 25px;
+  border-bottom: 2px solid #2c3e50;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(135deg, #0f3460 0%, #1a5276 100%);
+}
+
+.parking-view-modal .modal-header h3 {
+  color: #ffffff;
+  margin: 0;
+  font-size: 24px;
+}
+
+.parking-view-modal .close-btn {
+  background: none;
+  border: none;
+  color: #ffffff;
+  font-size: 24px;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.parking-view-modal .close-btn:hover {
+  transform: scale(1.2);
+}
+
+.parking-view-modal .modal-body {
+  padding: 30px;
+  color: #e0e0e0;
+}
+
+/* IMAGEN PRINCIPAL */
+.parking-view-modal .parking-main-image {
+  margin-bottom: 30px;
+  padding: 15px;
+  background: #243447;
+  border-radius: 8px;
+  border-left: 4px solid #0f3460;
+}
+
+.parking-view-modal .parking-main-image h4 {
+  color: #ffffff;
+  margin: 0 0 15px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.parking-view-modal .parking-main-image img {
+  width: 100%;
+  height: auto;
+  max-height: 400px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: #0f1e2e;
+  display: block;
+}
+
+/* GALERÍA DE IMÁGENES */
+.parking-view-modal .parking-images-gallery {
+  margin-bottom: 30px;
+  padding: 15px;
+  background: #243447;
+  border-radius: 8px;
+  border-left: 4px solid #0f3460;
+}
+
+.parking-view-modal .parking-images-gallery h4 {
+  color: #ffffff;
+  margin: 0 0 20px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.parking-view-modal .parking-images-gallery img {
+  width: 100%;
+  height: 150px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: #0f1e2e;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.parking-view-modal .parking-images-gallery img:hover {
+  transform: scale(1.08);
+  box-shadow: 0 4px 15px rgba(15, 52, 96, 0.5);
+}
+
+/* INFORMACIÓN DEL ESTACIONAMIENTO */
+.parking-view-modal .modal-body>div:last-child {
+  border-top: 2px solid #2c3e50;
+  padding-top: 30px;
+}
+
+.parking-view-modal .modal-body>div:last-child h4 {
+  color: #ffffff;
+  margin-top: 0;
+  margin-bottom: 20px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.parking-view-modal .modal-body div[style*="display: grid"] p {
+  color: #e0e0e0;
+}
+
+.parking-view-modal .modal-body p[style*="fontWeight: bold"] {
+  color: #64b5f6 !important;
+  font-weight: 600 !important;
+}
+
+.parking-view-modal .modal-body p[style*="fontSize: 18px"] {
+  color: #4fc3f7 !important;
+  font-weight: bold !important;
+}
+
+.parking-view-modal .modal-body p[style*="fontSize: 20px"] {
+  color: #81d4fa !important;
+  font-weight: bold !important;
+}
+
+.parking-view-modal .modal-body p[style*="color: #999"] {
+  color: #90caf9 !important;
+}
+
+.parking-view-modal .modal-body p[style*="background: #f5f5f5"] {
+  background: #2c3e50 !important;
+  color: #eceff1 !important;
+  border-left: 4px solid #0f3460;
+  padding: 15px !important;
+}
+
+/* ============================================
+   MODAL: EDITAR ESTACIONAMIENTO
+   ============================================ */
+
+.parking-edit-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+  overflow-y: auto;
+}
+
+.parking-edit-modal .modal-content {
+  background: #1a2332;
+  border-radius: 12px;
+  max-width: 900px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+}
+
+.parking-edit-modal .modal-header {
+  padding: 25px;
+  border-bottom: 2px solid #2c3e50;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: linear-gradient(135deg, #0f3460 0%, #1a5276 100%);
+}
+
+.parking-edit-modal .modal-header h3 {
+  color: #ffffff;
+  margin: 0;
+  font-size: 24px;
+}
+
+.parking-edit-modal .modal-body {
+  padding: 30px;
+}
+
+.parking-edit-modal .form-group {
+  margin-bottom: 20px;
+}
+
+.parking-edit-modal .form-group label {
+  color: #64b5f6;
+  font-weight: 600;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.parking-edit-modal .form-group input,
+.parking-edit-modal .form-group select,
+.parking-edit-modal .form-group textarea {
+  width: 100%;
+  padding: 10px;
+  background: #243447;
+  border: 1px solid #0f3460;
+  color: #ffffff;
+  border-radius: 6px;
+  font-family: inherit;
+}
+
+.parking-edit-modal .form-group input:focus,
+.parking-edit-modal .form-group select:focus,
+.parking-edit-modal .form-group textarea:focus {
+  outline: none;
+  border-color: #64b5f6;
+  box-shadow: 0 0 0 3px rgba(100, 181, 246, 0.1);
+}

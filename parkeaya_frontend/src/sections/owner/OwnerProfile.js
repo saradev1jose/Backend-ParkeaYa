@@ -44,6 +44,12 @@ const OwnerProfile = () => {
   const [showEditParking, setShowEditParking] = useState(false);
   const [editParkingForm, setEditParkingForm] = useState(null);
 
+  // 🖼️ Estados para gestión de imágenes en edición
+  const [editImagePreview, setEditImagePreview] = useState([]);
+  const [editImagesToDelete, setEditImagesToDelete] = useState([]);
+  const [editImagesToAdd, setEditImagesToAdd] = useState([]);
+  const [editImagePrincipal, setEditImagePrincipal] = useState(null);
+
   // Cargar datos del owner
   const loadOwnerData = async () => {
     try {
@@ -168,64 +174,118 @@ const OwnerProfile = () => {
   };
 
   // Crear nuevo estacionamiento
+  // Crear nuevo estacionamiento - VERSIÓN CORREGIDA
   const createParking = async (e) => {
     e.preventDefault();
     try {
-      // Preparar datos para la API
+      console.log('🚀 INICIANDO CREACIÓN DE ESTACIONAMIENTO...');
+      console.log('📊 Datos del formulario:', parkingForm);
 
-      // Usar FormData para permitir subir imágenes
+      // ✅ USAR FormData CORRECTAMENTE
       const formData = new FormData();
+
+      // ✅ CAMPOS OBLIGATORIOS
       formData.append('nombre', parkingForm.nombre);
       formData.append('direccion', parkingForm.direccion);
-      formData.append('coordenadas', parkingForm.coordenadas || '');
-      formData.append('telefono', parkingForm.telefono || '');
-      formData.append('descripcion', parkingForm.descripcion || '');
-      if (parkingForm.horario_apertura) formData.append('horario_apertura', parkingForm.horario_apertura);
-      if (parkingForm.horario_cierre) formData.append('horario_cierre', parkingForm.horario_cierre);
+      formData.append('telefono', parkingForm.telefono);
       formData.append('nivel_seguridad', parkingForm.nivel_seguridad);
       formData.append('tarifa_hora', parkingForm.tarifa_hora);
       formData.append('total_plazas', parkingForm.total_plazas);
       formData.append('plazas_disponibles', parkingForm.plazas_disponibles);
-      formData.append('servicios', JSON.stringify(parkingForm.servicios || []));
-      formData.append('panel_local_id', `owner_${ownerData?.id}_${Date.now()}`);
 
-      // Imagen principal (opcional)
-      if (parkingForm.imagen_principal) {
-        formData.append('imagen_principal', parkingForm.imagen_principal);
+      // ✅ CAMPOS OPCIONALES
+      if (parkingForm.coordenadas) formData.append('coordenadas', parkingForm.coordenadas);
+      if (parkingForm.descripcion) formData.append('descripcion', parkingForm.descripcion);
+      if (parkingForm.horario_apertura) formData.append('horario_apertura', parkingForm.horario_apertura);
+      if (parkingForm.horario_cierre) formData.append('horario_cierre', parkingForm.horario_cierre);
+
+      // ✅ SERVICIOS - Enviar como array JSON
+      if (parkingForm.servicios && parkingForm.servicios.length > 0) {
+        formData.append('servicios', JSON.stringify(parkingForm.servicios));
+      } else {
+        formData.append('servicios', JSON.stringify([]));
       }
 
-      // Adjuntar imágenes (campo 'imagenes')
+      // ✅ IMÁGENES - SOLO usar el campo 'imagenes' (no 'imagen_principal')
       if (parkingForm.imagenes && parkingForm.imagenes.length > 0) {
-        parkingForm.imagenes.forEach((file, idx) => {
+        console.log(`📸 Agregando ${parkingForm.imagenes.length} imagen(es) al FormData`);
+        parkingForm.imagenes.forEach((file, index) => {
           formData.append('imagenes', file);
+          console.log(`   📁 Imagen ${index + 1}: ${file.name} (${file.size} bytes)`);
         });
+      } else {
+        console.log('ℹ️ No hay imágenes para agregar');
       }
 
-      console.log('📤 Enviando datos del estacionamiento (multipart):', parkingForm);
+      // ✅ DEBUG: Verificar contenido del FormData
+      console.log('🔍 CONTENIDO DEL FORMDATA:');
+      for (let [key, value] of formData.entries()) {
+        if (value instanceof File) {
+          console.log(`   ${key}: [File] ${value.name} (${value.size} bytes)`);
+        } else {
+          console.log(`   ${key}: ${value}`);
+        }
+      }
 
       const token = localStorage.getItem('access_token');
-      const response = await fetch(`${API_BASE}/parking/approval/requests/`, {
+      console.log('🔐 Token disponible:', !!token);
+
+      // ✅ ENVIAR CON FETCH CORRECTO
+      console.log('📤 Enviando POST a:', `${API_BASE}/parkings/`);
+
+      const response = await fetch(`${API_BASE}/parkings/`, {
         method: 'POST',
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          // ❌ NO incluir 'Content-Type' - el navegador lo establecerá automáticamente con boundary
+        },
         body: formData
       });
 
+      console.log('📡 Response status:', response.status);
+      console.log('📡 Response ok:', response.ok);
+
       if (response.ok) {
         const newParking = await response.json();
-        console.log('✅ Estacionamiento creado:', newParking);
-        showNotification('Estacionamiento creado y enviado para aprobación', 'success');
+        console.log('✅ ÉXITO: Estacionamiento creado:', newParking);
+        console.log('   ID:', newParking.id);
+        console.log('   Nombre:', newParking.nombre);
+        console.log('   Imágenes guardadas:', newParking.imagenes ? newParking.imagenes.length : 0);
+
+        showNotification('✅ Estacionamiento creado exitosamente', 'success');
         setShowParkingForm(false);
         resetParkingForm();
-        // Recargar la lista de estacionamientos
+
+        // Recargar lista
         await loadParkingData();
+
       } else {
-        const errorData = await response.json();
-        console.error('❌ Error del servidor:', errorData);
-        throw new Error(errorData.detail || errorData.message || 'Error creando estacionamiento');
+        const errorText = await response.text();
+        console.error('❌ ERROR en respuesta:', response.status);
+        console.error('❌ Error text:', errorText);
+
+        let errorMessage = 'Error creando estacionamiento';
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.detail || errorData.message || errorData.error || errorMessage;
+
+          // Mostrar errores de validación específicos
+          if (errorData.errors) {
+            const fieldErrors = Object.entries(errorData.errors)
+              .map(([field, errors]) => `${field}: ${errors.join(', ')}`)
+              .join('; ');
+            errorMessage = `Errores de validación: ${fieldErrors}`;
+          }
+        } catch {
+          errorMessage = errorText || errorMessage;
+        }
+
+        throw new Error(errorMessage);
       }
+
     } catch (error) {
-      console.error('Error creando estacionamiento:', error);
-      showNotification(error.message, 'error');
+      console.error('💥 ERROR creando estacionamiento:', error);
+      showNotification(`❌ ${error.message}`, 'error');
     }
   };
 
@@ -264,14 +324,14 @@ const OwnerProfile = () => {
     try {
       console.log('✏️ Preparando edición del parking:', parking.id);
 
-      // Primero cargar los datos completos del parking
-      const response = await fetch(`${API_BASE}/parking/${parking.id}/`, {
+      const response = await fetch(`${API_BASE}/parkings/${parking.id}/`, {
         headers: getAuthHeaders()
       });
 
       if (!response.ok) throw new Error('Error cargando datos para editar');
 
       const fullParkingData = await response.json();
+      console.log('✅ Datos completos del parking:', fullParkingData);
 
       setEditParkingForm({
         id: fullParkingData.id,
@@ -286,15 +346,40 @@ const OwnerProfile = () => {
         tarifa_hora: fullParkingData.tarifa_hora || '',
         total_plazas: fullParkingData.total_plazas || '',
         plazas_disponibles: fullParkingData.plazas_disponibles || '',
-        imagen_principal: fullParkingData.imagen_principal || null,
         servicios: fullParkingData.servicios || []
       });
+
+      // ✅ Cargar imágenes existentes para preview
+      if (fullParkingData.imagenes && fullParkingData.imagenes.length > 0) {
+        const existingImages = fullParkingData.imagenes.map(img => ({
+          id: img.id,
+          url: img.imagen_url || img.imagen,
+          isNew: false
+        }));
+        setEditImagePreview(existingImages);
+        console.log('🖼️ Imágenes existentes cargadas:', existingImages.length);
+      } else {
+        setEditImagePreview([]);
+      }
+
+      // ✅ Cargar imagen principal si existe
+      if (fullParkingData.imagen_principal) {
+        setEditImagePrincipal({
+          url: fullParkingData.imagen_principal,
+          isNew: false
+        });
+      } else {
+        setEditImagePrincipal(null);
+      }
+
+      // Resetear arrays de cambios
+      setEditImagesToDelete([]);
+      setEditImagesToAdd([]);
 
       setShowEditParking(true);
 
     } catch (error) {
       console.error('❌ Error cargando datos para editar:', error);
-      // Fallback: usar los datos básicos que ya tenemos
       setEditParkingForm({
         id: parking.id,
         nombre: parking.nombre || '',
@@ -308,14 +393,94 @@ const OwnerProfile = () => {
         tarifa_hora: parking.tarifa_hora || '',
         total_plazas: parking.total_plazas || '',
         plazas_disponibles: parking.plazas_disponibles || '',
-        imagen_principal: parking.imagen_principal || null,
         servicios: parking.servicios || []
       });
+      setEditImagePreview([]);
+      setEditImagesToDelete([]);
+      setEditImagesToAdd([]);
+      setEditImagePrincipal(null);
       setShowEditParking(true);
     }
   };
 
-  // Enviar actualización del parking (PUT) - CORREGIDO
+  // Agregar imágenes en edición
+  const handleEditImageAdd = (event) => {
+    console.log('🖼️ ===== HANDLE EDIT IMAGE ADD =====');
+    console.log('📁 Event target files:', event.target.files);
+
+    const files = Array.from(event.target.files);
+    console.log('📁 Files array length:', files.length);
+    console.log('📁 Files array:', files);
+
+    if (files.length === 0) {
+      console.log('❌ No se seleccionaron archivos');
+      return;
+    }
+
+    const newImages = files.map(file => ({
+      id: `new-${Date.now()}-${Math.random()}`,
+      url: URL.createObjectURL(file),
+      file: file,
+      isNew: true
+    }));
+
+    console.log('🖼️ Nuevas imágenes procesadas:', newImages);
+    console.log('🖼️ Total imágenes a agregar:', newImages.length);
+
+    setEditImagePreview(prev => {
+      const updated = [...prev, ...newImages];
+      console.log('📸 Preview actualizado - Total:', updated.length);
+      return updated;
+    });
+
+    setEditImagesToAdd(prev => {
+      const updated = [...prev, ...files];
+      console.log('📦 editImagesToAdd actualizado - Total:', updated.length);
+      console.log('📦 Archivos en editImagesToAdd:', updated.map(f => ({ name: f.name, size: f.size, type: f.type })));
+      return updated;
+    });
+
+    event.target.value = '';
+    console.log('✅ Handle edit image add completado');
+  };
+
+  // Eliminar imagen en edición
+  const handleEditImageDelete = (imageId) => {
+    const imageToRemove = editImagePreview.find(img => img.id === imageId);
+
+    if (imageToRemove) {
+      if (!imageToRemove.isNew) {
+        setEditImagesToDelete(prev => [...prev, imageToRemove.id]);
+      }
+
+      setEditImagePreview(prev => prev.filter(img => img.id !== imageId));
+
+      if (imageToRemove.isNew) {
+        setEditImagesToAdd(prev => prev.filter(file =>
+          URL.createObjectURL(file) !== imageToRemove.url
+        ));
+      }
+    }
+  };
+
+  // Cambiar imagen principal en edición
+  const handleEditImagePrincipalChange = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      setEditImagePrincipal({
+        url: URL.createObjectURL(file),
+        file: file,
+        isNew: true
+      });
+    }
+  };
+
+  // Remover imagen principal en edición
+  const handleRemoveEditImagePrincipal = () => {
+    setEditImagePrincipal(null);
+  };
+
+  // Enviar edición del parking con imágenes
   const submitEditParking = async (e) => {
     e.preventDefault();
     try {
@@ -324,86 +489,164 @@ const OwnerProfile = () => {
         return;
       }
 
-      console.log('📤 Enviando actualización del parking:', editParkingForm);
+      console.log('🚨 ===== INICIANDO EDICIÓN =====');
+      console.log('📋 editParkingForm:', editParkingForm);
+      console.log('📸 editImagesToAdd:', editImagesToAdd);
+      console.log('🗑️ editImagesToDelete:', editImagesToDelete);
+      console.log('📷 editImagePrincipal:', editImagePrincipal);
 
-      const payload = { ...editParkingForm };
-      delete payload.id;
+      // 1. ACTUALIZAR DATOS BÁSICOS
+      console.log('1️⃣ ACTUALIZANDO DATOS BÁSICOS...');
 
-      let response;
-      const token = localStorage.getItem('access_token');
+      const formData = new FormData();
+      const fields = ['nombre', 'direccion', 'coordenadas', 'telefono', 'descripcion',
+        'horario_apertura', 'horario_cierre', 'nivel_seguridad',
+        'tarifa_hora', 'total_plazas', 'plazas_disponibles'];
 
-      // Si imagen_principal es un archivo, enviar multipart/form-data
-      if (payload.imagen_principal && typeof payload.imagen_principal !== 'string') {
-        const formData = new FormData();
+      fields.forEach(field => {
+        if (editParkingForm[field] !== null && editParkingForm[field] !== undefined) {
+          formData.append(field, editParkingForm[field]);
+        }
+      });
 
-        // Agregar todos los campos al FormData
-        Object.keys(payload).forEach(key => {
-          if (payload[key] !== null && payload[key] !== undefined) {
-            if (key === 'servicios' && Array.isArray(payload[key])) {
-              formData.append(key, JSON.stringify(payload[key]));
-            } else if (key !== 'imagen_principal') {
-              formData.append(key, payload[key]);
-            }
-          }
-        });
-
-        // Agregar la imagen principal si es un archivo nuevo
-        formData.append('imagen_principal', payload.imagen_principal);
-
-        response = await fetch(`${API_BASE}/parking/${editParkingForm.id}/`, { // ✅ URL corregida
-          method: 'PUT',
-          headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-          body: formData
-        });
-      } else {
-        // Enviar como JSON normal
-        response = await fetch(`${API_BASE}/parking/${editParkingForm.id}/`, { // ✅ URL corregida
-          method: 'PUT',
-          headers: getAuthHeaders(true),
-          body: JSON.stringify(payload)
+      // Servicios
+      if (editParkingForm.servicios && editParkingForm.servicios.length > 0) {
+        editParkingForm.servicios.forEach(service => {
+          formData.append('servicios', service);
         });
       }
 
-      console.log('📡 Response status:', response.status);
-
-      if (response.ok) {
-        const updatedData = await response.json();
-        console.log('✅ Parking actualizado:', updatedData);
-
-        showNotification('Estacionamiento actualizado correctamente', 'success');
-        setShowEditParking(false);
-        setEditParkingForm(null);
-
-        // Recargar lista de estacionamientos
-        await loadParkingData();
+      // ✅ AGREGAR IMAGEN PRINCIPAL SI ESTÁ DISPONIBLE
+      if (editImagePrincipal && editImagePrincipal.isNew && editImagePrincipal.file) {
+        console.log('📷 Agregando imagen principal al FormData:', editImagePrincipal.file.name);
+        formData.append('imagen_principal', editImagePrincipal.file);
+      } else if (editImagePrincipal) {
+        console.log('ℹ️ Imagen principal ya existe en servidor, no se reemplaza');
       } else {
-        const errorData = await response.json().catch(() => null);
-        console.error('❌ Error del servidor:', errorData);
+        console.log('ℹ️ Sin imagen principal');
+      }
 
-        let errorMessage = 'Error actualizando estacionamiento';
-        if (errorData) {
-          if (errorData.detail) {
-            errorMessage = errorData.detail;
-          } else if (typeof errorData === 'object') {
-            // Procesar errores de validación por campo
-            const fieldErrors = [];
-            Object.keys(errorData).forEach(field => {
-              if (Array.isArray(errorData[field])) {
-                fieldErrors.push(`${field}: ${errorData[field].join(', ')}`);
-              } else {
-                fieldErrors.push(`${field}: ${errorData[field]}`);
-              }
+      const token = localStorage.getItem('access_token');
+      console.log('🔑 Token disponible:', !!token);
+
+      const updateResponse = await fetch(`${API_BASE}/parkings/${editParkingForm.id}/`, {
+        method: 'PUT',
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+        body: formData
+      });
+
+      console.log('📡 Response status actualización:', updateResponse.status);
+
+      if (!updateResponse.ok) {
+        const errorData = await updateResponse.json().catch(() => null);
+        throw new Error(errorData?.detail || 'Error actualizando datos básicos');
+      }
+
+      console.log('✅ Datos básicos actualizados correctamente');
+
+      // 2. ELIMINAR IMÁGENES
+      console.log('2️⃣ VERIFICANDO IMÁGENES A ELIMINAR...');
+      console.log('🔍 editImagesToDelete length:', editImagesToDelete.length);
+      console.log('🔍 editImagesToDelete contenido:', editImagesToDelete);
+
+      if (editImagesToDelete.length > 0) {
+        console.log(`🗑️ ELIMINANDO ${editImagesToDelete.length} IMAGEN(ES)...`);
+        for (const imageId of editImagesToDelete) {
+          try {
+            console.log(`🔴 Eliminando imagen ID: ${imageId}`);
+            const deleteResponse = await fetch(`${API_BASE}/parkings/${editParkingForm.id}/delete_image/?image_id=${imageId}`, {
+              method: 'DELETE',
+              headers: getAuthHeaders()
             });
-            if (fieldErrors.length > 0) {
-              errorMessage = fieldErrors.join('; ');
+
+            console.log(`📡 Delete response status: ${deleteResponse.status}`);
+
+            if (deleteResponse.ok) {
+              console.log(`✅ Imagen ${imageId} eliminada`);
+            } else {
+              console.warn(`⚠️ No se pudo eliminar imagen ${imageId}`);
             }
+          } catch (error) {
+            console.error(`❌ Error eliminando imagen ${imageId}:`, error);
           }
         }
-
-        throw new Error(errorMessage);
+      } else {
+        console.log('ℹ️ No hay imágenes para eliminar');
       }
+
+      // 3. AGREGAR NUEVAS IMÁGENES
+      console.log('3️⃣ VERIFICANDO IMÁGENES A AGREGAR...');
+      console.log('🔍 editImagesToAdd length:', editImagesToAdd.length);
+      console.log('🔍 editImagesToAdd contenido:', editImagesToAdd);
+
+      if (editImagesToAdd.length > 0) {
+        console.log(`🟢 AGREGANDO ${editImagesToAdd.length} NUEVA(S) IMAGEN(ES)...`);
+
+        const imageFormData = new FormData();
+        editImagesToAdd.forEach((file, index) => {
+          imageFormData.append('imagenes', file);
+          console.log(`📤 Agregando imagen ${index + 1}:`, file.name, `(${file.size} bytes)`, file.type);
+        });
+
+        // Debug del FormData
+        console.log('📦 FormData para upload_images:');
+        for (let [key, value] of imageFormData.entries()) {
+          console.log(`   ${key}:`, value instanceof File ? `[File] ${value.name} (${value.size} bytes)` : value);
+        }
+
+        try {
+          console.log('🚀 ENVIANDO REQUEST A UPLOAD_IMAGES...');
+          console.log('📍 URL:', `${API_BASE}/parkings/${editParkingForm.id}/upload_images/`);
+          console.log('🔐 Auth header:', `Bearer ${token ? token.substring(0, 20) + '...' : 'no token'}`);
+
+          const uploadResponse = await fetch(`${API_BASE}/parkings/${editParkingForm.id}/upload_images/`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+            body: imageFormData
+          });
+
+          console.log('📡 UPLOAD_IMAGES RESPONSE STATUS:', uploadResponse.status);
+          console.log('📡 UPLOAD_IMAGES RESPONSE OK:', uploadResponse.ok);
+
+          if (uploadResponse.ok) {
+            const uploadResult = await uploadResponse.json();
+            console.log('✅ UPLOAD_IMAGES SUCCESS:', uploadResult);
+            console.log('📸 Imágenes subidas:', uploadResult.uploaded_images);
+            console.log('📊 Total imágenes en parking:', uploadResult.total_parking_images);
+          } else {
+            const errorText = await uploadResponse.text();
+            console.error('❌ UPLOAD_IMAGES ERROR:', uploadResponse.status);
+            console.error('❌ Error text:', errorText);
+          }
+        } catch (error) {
+          console.error('💥 ERROR EN UPLOAD_IMAGES REQUEST:', error);
+          console.error('💥 Error message:', error.message);
+        }
+      } else {
+        console.log('ℹ️ No hay nuevas imágenes para agregar');
+      }
+
+      // 4. RECARGAR Y LIMPIAR
+      console.log('4️⃣ RECARGANDO DATOS...');
+      await loadParkingData();
+
+      console.log('🎉 ===== EDICIÓN COMPLETADA =====');
+      showNotification('Estacionamiento actualizado correctamente', 'success');
+
+      // Limpiar estados
+      setShowEditParking(false);
+      setEditParkingForm(null);
+      setEditImagePreview([]);
+      setEditImagesToDelete([]);
+      setEditImagesToAdd([]);
+      setEditImagePrincipal(null);
+
     } catch (error) {
-      console.error('❌ Error actualizando parking:', error);
+      console.error('💥 ERROR CRÍTICO EN EDICIÓN:', error);
+      console.error('💥 Error message:', error.message);
+      console.error('💥 Error stack:', error.stack);
       showNotification(error.message || 'Error actualizando estacionamiento', 'error');
     }
   };
@@ -447,7 +690,6 @@ const OwnerProfile = () => {
       plazas_disponibles: '',
       servicios: [],
       imagenes: [],
-      imagen_principal: null
     });
   };
 
@@ -467,7 +709,9 @@ const OwnerProfile = () => {
   ];
 
   const handleParkingInputChange = (e) => {
-    const { name, value, type, checked } = e.target;
+    const { name, value, type, checked, files } = e.target;
+
+    console.log(`🔄 Campo cambiado: ${name}`, { value, type, checked });
 
     if (type === 'checkbox') {
       setParkingForm(prev => ({
@@ -476,6 +720,20 @@ const OwnerProfile = () => {
           ? [...prev.servicios, value]
           : prev.servicios.filter(service => service !== value)
       }));
+      return;
+    }
+
+    if (type === 'file') {
+      // ✅ SOLO usar 'imagenes' para múltiples archivos
+      if (name === 'imagenes') {
+        const fileList = Array.from(files || []);
+        console.log(`📁 ${fileList.length} archivo(s) seleccionado(s):`, fileList.map(f => f.name));
+
+        setParkingForm(prev => ({
+          ...prev,
+          imagenes: fileList
+        }));
+      }
       return;
     }
 
@@ -908,22 +1166,12 @@ const OwnerProfile = () => {
                 Agregar Estacionamiento
               </button>
             </div>
-
             {showParkingForm && (
               <div className="parking-form-modal">
                 <div className="modal-content">
                   <div className="modal-header">
-                    <h3>
-                      <i className="fas fa-plus-circle"></i>
-                      Nuevo Estacionamiento
-                    </h3>
-                    <button
-                      className="close-btn"
-                      onClick={() => {
-                        setShowParkingForm(false);
-                        resetParkingForm();
-                      }}
-                    >
+                    <h3>Nuevo Estacionamiento</h3>
+                    <button className="close-btn" onClick={() => setShowParkingForm(false)}>
                       <i className="fas fa-times"></i>
                     </button>
                   </div>
@@ -933,11 +1181,9 @@ const OwnerProfile = () => {
                       <div className="form-column">
                         <h4>Información Básica</h4>
 
+                        {/* ✅ CAMPOS OBLIGATORIOS */}
                         <div className="form-group">
-                          <label>
-                            <i className="fas fa-signature"></i>
-                            Nombre del Estacionamiento *
-                          </label>
+                          <label>Nombre del Estacionamiento *</label>
                           <input
                             type="text"
                             name="nombre"
@@ -949,10 +1195,7 @@ const OwnerProfile = () => {
                         </div>
 
                         <div className="form-group">
-                          <label>
-                            <i className="fas fa-map-marker-alt"></i>
-                            Dirección Completa *
-                          </label>
+                          <label>Dirección Completa *</label>
                           <input
                             type="text"
                             name="direccion"
@@ -964,53 +1207,7 @@ const OwnerProfile = () => {
                         </div>
 
                         <div className="form-group">
-                          <label>
-                            <i className="fas fa-map-pin"></i>
-                            Coordenadas (Opcional)
-                          </label>
-                          <input
-                            type="text"
-                            name="coordenadas"
-                            value={parkingForm.coordenadas}
-                            onChange={handleParkingInputChange}
-                            placeholder="Ej: 40.7128, -74.0060"
-                          />
-                        </div>
-
-                        <div className="form-group">
-                          <label>
-                            <i className="fas fa-image"></i>
-                            Imagen principal (opcional)
-                          </label>
-                          <input
-                            type="file"
-                            name="imagen_principal"
-                            accept="image/*"
-                            onChange={handleParkingInputChange}
-                          />
-                          <small className="form-help">Imagen principal mostrada en listados (JPG, PNG).</small>
-                        </div>
-
-                        <div className="form-group">
-                          <label>
-                            <i className="fas fa-images"></i>
-                            Imágenes del estacionamiento (opcional)
-                          </label>
-                          <input
-                            type="file"
-                            name="imagenes"
-                            accept="image/*"
-                            multiple
-                            onChange={handleParkingInputChange}
-                          />
-                          <small className="form-help">Puedes subir varias imágenes (JPG, PNG). Tamaño recomendado &lt; 5MB por imagen.</small>
-                        </div>
-
-                        <div className="form-group">
-                          <label>
-                            <i className="fas fa-phone"></i>
-                            Teléfono de Contacto *
-                          </label>
+                          <label>Teléfono de Contacto *</label>
                           <input
                             type="tel"
                             name="telefono"
@@ -1021,11 +1218,35 @@ const OwnerProfile = () => {
                           />
                         </div>
 
+                        {/* ✅ SOLO CAMPO 'imagenes' PARA MÚLTIPLES ARCHIVOS */}
                         <div className="form-group">
-                          <label>
-                            <i className="fas fa-align-left"></i>
-                            Descripción
-                          </label>
+                          <label>Imágenes del Estacionamiento</label>
+                          <input
+                            type="file"
+                            name="imagenes"
+                            accept="image/*"
+                            multiple
+                            onChange={handleParkingInputChange}
+                          />
+                          <small className="form-help">
+                            Puedes seleccionar múltiples imágenes (JPG, PNG, max 5MB cada una)
+                          </small>
+
+                          {/* Preview de imágenes seleccionadas */}
+                          {parkingForm.imagenes && parkingForm.imagenes.length > 0 && (
+                            <div className="image-previews">
+                              <p>📸 {parkingForm.imagenes.length} imagen(es) seleccionada(s):</p>
+                              <ul>
+                                {parkingForm.imagenes.map((file, index) => (
+                                  <li key={index}>{file.name} ({(file.size / 1024 / 1024).toFixed(2)} MB)</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="form-group">
+                          <label>Descripción</label>
                           <textarea
                             name="descripcion"
                             value={parkingForm.descripcion}
@@ -1039,62 +1260,9 @@ const OwnerProfile = () => {
                       <div className="form-column">
                         <h4>Configuración Operativa</h4>
 
-                        <div className="form-row">
-                          <div className="form-group">
-                            <label>
-                              <i className="fas fa-clock"></i>
-                              Horario Apertura
-                            </label>
-                            <input
-                              type="time"
-                              name="horario_apertura"
-                              value={parkingForm.horario_apertura}
-                              onChange={handleParkingInputChange}
-                              placeholder="08:00"
-                            />
-                            <small className="form-help">Dejar vacío para 24 horas</small>
-                          </div>
-
-                          <div className="form-group">
-                            <label>
-                              <i className="fas fa-clock"></i>
-                              Horario Cierre
-                            </label>
-                            <input
-                              type="time"
-                              name="horario_cierre"
-                              value={parkingForm.horario_cierre}
-                              onChange={handleParkingInputChange}
-                              placeholder="22:00"
-                            />
-                            <small className="form-help">Dejar vacío para 24 horas</small>
-                          </div>
-                        </div>
-
+                        {/* ✅ CAMPOS NUMÉRICOS OBLIGATORIOS */}
                         <div className="form-group">
-                          <label>
-                            <i className="fas fa-shield-alt"></i>
-                            Nivel de Seguridad *
-                          </label>
-                          <select
-                            name="nivel_seguridad"
-                            value={parkingForm.nivel_seguridad}
-                            onChange={handleParkingInputChange}
-                            required
-                          >
-                            {securityLevels.map(level => (
-                              <option key={level} value={level}>
-                                {level}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        <div className="form-group">
-                          <label>
-                            <i className="fas fa-money-bill-wave"></i>
-                            Tarifa por Hora (S/) *
-                          </label>
+                          <label>Tarifa por Hora (S/) *</label>
                           <input
                             type="number"
                             name="tarifa_hora"
@@ -1109,10 +1277,7 @@ const OwnerProfile = () => {
 
                         <div className="form-row">
                           <div className="form-group">
-                            <label>
-                              <i className="fas fa-car"></i>
-                              Total de Plazas *
-                            </label>
+                            <label>Total de Plazas *</label>
                             <input
                               type="number"
                               name="total_plazas"
@@ -1125,10 +1290,7 @@ const OwnerProfile = () => {
                           </div>
 
                           <div className="form-group">
-                            <label>
-                              <i className="fas fa-car-side"></i>
-                              Plazas Disponibles *
-                            </label>
+                            <label>Plazas Disponibles *</label>
                             <input
                               type="number"
                               name="plazas_disponibles"
@@ -1141,14 +1303,59 @@ const OwnerProfile = () => {
                             />
                           </div>
                         </div>
+
+                        <div className="form-group">
+                          <label>Nivel de Seguridad *</label>
+                          <select
+                            name="nivel_seguridad"
+                            value={parkingForm.nivel_seguridad}
+                            onChange={handleParkingInputChange}
+                            required
+                          >
+                            {securityLevels.map(level => (
+                              <option key={level} value={level}>{level}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="form-row">
+                          <div className="form-group">
+                            <label>Horario Apertura</label>
+                            <input
+                              type="time"
+                              name="horario_apertura"
+                              value={parkingForm.horario_apertura}
+                              onChange={handleParkingInputChange}
+                            />
+                          </div>
+
+                          <div className="form-group">
+                            <label>Horario Cierre</label>
+                            <input
+                              type="time"
+                              name="horario_cierre"
+                              value={parkingForm.horario_cierre}
+                              onChange={handleParkingInputChange}
+                            />
+                          </div>
+                        </div>
+
+                        <div className="form-group">
+                          <label>Coordenadas (Opcional)</label>
+                          <input
+                            type="text"
+                            name="coordenadas"
+                            value={parkingForm.coordenadas}
+                            onChange={handleParkingInputChange}
+                            placeholder="Ej: -12.0464, -77.0428"
+                          />
+                        </div>
                       </div>
                     </div>
 
+                    {/* ✅ SERVICIOS */}
                     <div className="services-section">
-                      <h4>
-                        <i className="fas fa-concierge-bell"></i>
-                        Servicios Adicionales
-                      </h4>
+                      <h4>Servicios Adicionales</h4>
                       <div className="services-grid">
                         {servicesOptions.map(service => (
                           <label key={service} className="service-checkbox">
@@ -1166,19 +1373,10 @@ const OwnerProfile = () => {
                     </div>
 
                     <div className="form-actions">
-                      <button
-                        type="button"
-                        className="cancel-btn"
-                        onClick={() => {
-                          setShowParkingForm(false);
-                          resetParkingForm();
-                        }}
-                      >
-                        <i className="fas fa-times"></i>
+                      <button type="button" className="cancel-btn" onClick={() => setShowParkingForm(false)}>
                         Cancelar
                       </button>
                       <button type="submit" className="submit-btn">
-                        <i className="fas fa-plus-circle"></i>
                         Crear Estacionamiento
                       </button>
                     </div>
@@ -1186,7 +1384,6 @@ const OwnerProfile = () => {
                 </div>
               </div>
             )}
-
             {parkingData?.length > 0 ? (
               <div className="parking-grid">
                 {parkingData.map(parking => (
@@ -1280,24 +1477,131 @@ const OwnerProfile = () => {
                     <button className="close-btn" onClick={() => setShowViewParking(false)}><i className="fas fa-times"></i></button>
                   </div>
                   <div className="modal-body">
+                    {/* 📷 IMAGEN PRINCIPAL */}
                     {selectedParking.imagen_principal && (
-                      <div className="parking-main-image">
-                        <img src={selectedParking.imagen_principal} alt={selectedParking.nombre} style={{ maxWidth: '100%', borderRadius: 8 }} />
+                      <div className="parking-main-image" style={{ marginBottom: '20px' }}>
+                        <h4 style={{ marginTop: 0, marginBottom: '10px' }}>📷 Imagen Principal</h4>
+                        <img
+                          src={selectedParking.imagen_principal}
+                          alt={selectedParking.nombre}
+                          style={{
+                            maxWidth: '100%',
+                            borderRadius: 8,
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                          }}
+                        />
                       </div>
                     )}
-                    {(!selectedParking.imagen_principal && selectedParking.imagenes && selectedParking.imagenes.length > 0) && (
-                      <div className="parking-images-gallery">
-                        {selectedParking.imagenes.map((img, idx) => (
-                          <img key={idx} src={img.imagen || img.url || img} alt={`img-${idx}`} style={{ width: 120, marginRight: 8, borderRadius: 6 }} />
-                        ))}
+
+                    {/* 🖼️ GALERÍA DE IMÁGENES */}
+                    {selectedParking.imagenes && selectedParking.imagenes.length > 0 && (
+                      <div className="parking-images-gallery" style={{ marginBottom: '20px' }}>
+                        <h4 style={{ marginTop: 0, marginBottom: '15px' }}>🖼️ Galería de Imágenes ({selectedParking.imagenes.length})</h4>
+                        <div style={{
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+                          gap: '12px'
+                        }}>
+                          {selectedParking.imagenes.map((img, idx) => (
+                            <div
+                              key={idx}
+                              style={{
+                                borderRadius: 8,
+                                overflow: 'hidden',
+                                boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                                cursor: 'pointer',
+                                transition: 'transform 0.2s'
+                              }}
+                              onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'
+                              }
+                              onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'
+                              }
+                            >
+                              <img
+                                src={img.imagen_url || img.imagen || img}
+                                alt={`Imagen ${idx + 1}`}
+                                style={{
+                                  width: '100%',
+                                  height: '150px',
+                                  objectFit: 'cover'
+                                }}
+                              />
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
-                    <p><strong>Dirección:</strong> {selectedParking.direccion}</p>
-                    <p><strong>Teléfono:</strong> {selectedParking.telefono}</p>
-                    <p><strong>Tarifa/hora:</strong> S/ {parseFloat(selectedParking.tarifa_hora || 0).toFixed(2)}</p>
-                    <p><strong>Plazas:</strong> {selectedParking.plazas_disponibles || 0}/{selectedParking.total_plazas || 0}</p>
-                    <p><strong>Nivel seguridad:</strong> {selectedParking.nivel_seguridad}</p>
-                    <p><strong>Descripción:</strong> {selectedParking.descripcion || '—'}</p>
+
+                    {/* ℹ️ INFORMACIÓN DEL ESTACIONAMIENTO */}
+                    <div style={{ borderTop: '2px solid #060a58ff', paddingTop: '20px' }}>
+                      <h4 style={{ marginTop: 0 }}>ℹ️ Información del Estacionamiento</h4>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+                        <div>
+                          <p style={{ margin: '0 0 5px 0', fontWeight: 'bold', color: '#666' }}>
+                            <i className="fas fa-map-marker-alt"></i> Dirección
+                          </p>
+                          <p style={{ margin: '0 0 10px 0' }}>{selectedParking.direccion}</p>
+                        </div>
+
+                        <div>
+                          <p style={{ margin: '0 0 5px 0', fontWeight: 'bold', color: '#666' }}>
+                            <i className="fas fa-phone"></i> Teléfono
+                          </p>
+                          <p style={{ margin: '0 0 10px 0' }}>{selectedParking.telefono}</p>
+                        </div>
+
+                        <div>
+                          <p style={{ margin: '0 0 5px 0', fontWeight: 'bold', color: '#666' }}>
+                            <i className="fas fa-money-bill-wave"></i> Tarifa por Hora
+                          </p>
+                          <p style={{ margin: '0 0 10px 0', fontSize: '18px', color: '#10b981', fontWeight: 'bold' }}>
+                            S/ {parseFloat(selectedParking.tarifa_hora || 0).toFixed(2)}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p style={{ margin: '0 0 5px 0', fontWeight: 'bold', color: '#666' }}>
+                            <i className="fas fa-shield-alt"></i> Nivel de Seguridad
+                          </p>
+                          <p style={{ margin: '0 0 10px 0' }}>{selectedParking.nivel_seguridad}</p>
+                        </div>
+
+                        <div>
+                          <p style={{ margin: '0 0 5px 0', fontWeight: 'bold', color: '#666' }}>
+                            <i className="fas fa-car"></i> Plazas Disponibles
+                          </p>
+                          <p style={{ margin: '0 0 10px 0' }}>
+                            <span style={{ fontSize: '20px', fontWeight: 'bold', color: '#3b82f6' }}>
+                              {selectedParking.plazas_disponibles || 0}
+                            </span>
+                            <span style={{ color: '#999' }}> / {selectedParking.total_plazas || 0}</span>
+                          </p>
+                        </div>
+
+                        <div>
+                          <p style={{ margin: '0 0 5px 0', fontWeight: 'bold', color: '#666' }}>
+                            <i className="fas fa-clock"></i> Horario
+                          </p>
+                          <p style={{ margin: '0 0 10px 0' }}>
+                            {selectedParking.horario_apertura ? formatTimeForDisplay(selectedParking.horario_apertura) : '24'} -
+                            {selectedParking.horario_cierre ? formatTimeForDisplay(selectedParking.horario_cierre) : '24'} hs
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Descripción */}
+                      {selectedParking.descripcion && (
+                        <div style={{ marginTop: '15px' }}>
+                          <p style={{ margin: '0 0 5px 0', fontWeight: 'bold', color: '#666' }}>
+                            <i className="fas fa-align-left"></i> Descripción
+                          </p>
+                          <p style={{ margin: 0, padding: '10px', background: '#f5f5f5', borderRadius: '6px', lineHeight: '1.5' }}>
+                            {selectedParking.descripcion}
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1342,13 +1646,82 @@ const OwnerProfile = () => {
                         ))}
                       </select>
                     </div>
+
+                    {/* 📷 Imagen Principal */}
                     <div className="form-group">
-                      <label>Imagen principal (opcional)</label>
-                      <input type="file" name="imagen_principal" accept="image/*" onChange={handleEditParkingChange} />
-                      {editParkingForm.imagen_principal && typeof editParkingForm.imagen_principal === 'string' && (
-                        <div style={{ marginTop: 8 }}><img src={editParkingForm.imagen_principal} alt="preview" style={{ maxWidth: 160, borderRadius: 6 }} /></div>
+                      <label>
+                        <i className="fas fa-image"></i>
+                        Imagen Principal
+                      </label>
+                      {editImagePrincipal ? (
+                        <div className="image-preview-container">
+                          <img src={editImagePrincipal.url} alt="Imagen principal" className="image-preview" style={{ maxWidth: 200, borderRadius: 8 }} />
+                          <button
+                            type="button"
+                            className="remove-image-btn"
+                            onClick={handleRemoveEditImagePrincipal}
+                          >
+                            <i className="fas fa-times"></i>
+                          </button>
+                        </div>
+                      ) : (
+                        <div>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleEditImagePrincipalChange}
+                            className="file-input"
+                          />
+                          <small>Selecciona una imagen principal para el estacionamiento</small>
+                        </div>
                       )}
                     </div>
+
+                    {/* 🖼️ Imágenes Múltiples */}
+                    <div className="form-group">
+                      <label>
+                        <i className="fas fa-images"></i>
+                        Imágenes del Estacionamiento
+                      </label>
+
+                      {/* Preview de imágenes */}
+                      {editImagePreview.length > 0 && (
+                        <div className="images-grid-preview" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '10px', marginBottom: '15px' }}>
+                          {editImagePreview.map((image, index) => (
+                            <div key={image.id} className="image-preview-item" style={{ position: 'relative', borderRadius: 8, overflow: 'hidden', border: '2px solid #e0e0e0' }}>
+                              <img src={image.url} alt={`Imagen ${index + 1}`} style={{ width: '100%', height: '120px', objectFit: 'cover' }} />
+                              <button
+                                type="button"
+                                className="remove-image-btn"
+                                onClick={() => handleEditImageDelete(image.id)}
+                                style={{ position: 'absolute', top: '5px', right: '5px', background: 'rgba(255,0,0,0.7)', border: 'none', color: 'white', padding: '5px 8px', borderRadius: '50%', cursor: 'pointer' }}
+                              >
+                                <i className="fas fa-times"></i>
+                              </button>
+                              {image.isNew && <span className="new-badge" style={{ position: 'absolute', bottom: '5px', left: '5px', background: '#10b981', color: 'white', padding: '3px 8px', borderRadius: '4px', fontSize: '11px' }}>Nueva</span>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Botón para agregar más imágenes */}
+                      <div className="add-images-section" style={{ marginTop: '10px' }}>
+                        <label htmlFor="edit-images-upload" className="add-images-btn" style={{ display: 'block', padding: '10px 15px', background: '#3b82f6', color: 'white', borderRadius: '6px', textAlign: 'center', cursor: 'pointer', fontSize: '14px' }}>
+                          <i className="fas fa-plus"></i>
+                          {' '}Agregar Imágenes
+                        </label>
+                        <input
+                          id="edit-images-upload"
+                          type="file"
+                          multiple
+                          accept="image/*"
+                          onChange={handleEditImageAdd}
+                          style={{ display: 'none' }}
+                        />
+                        <small style={{ display: 'block', marginTop: '8px', color: '#666' }}>Puedes seleccionar múltiples imágenes (JPG, PNG)</small>
+                      </div>
+                    </div>
+
                     <div className="form-group">
                       <label>Teléfono</label>
                       <input name="telefono" value={editParkingForm.telefono} onChange={handleEditParkingChange} />
