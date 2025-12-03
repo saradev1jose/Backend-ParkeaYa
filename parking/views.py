@@ -1180,7 +1180,7 @@ class ParkingImageViewSet(viewsets.ModelViewSet):
             )
         
         image_name = image.imagen.name
-        logger.info(f"✅ Eliminando imagen: {image_name} de parking_id={image.estacionamiento.id}")
+        logger.info(f" Eliminando imagen: {image_name} de parking_id={image.estacionamiento.id}")
         
         return super().destroy(request, *args, **kwargs)
 

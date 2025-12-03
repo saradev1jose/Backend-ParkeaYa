@@ -546,7 +546,7 @@ def revisar_solicitud_owner(request, solicitud_id):
 
                         try:
                             send_mail(
-                                'Solicitud Aprobada - Credenciales ParkEA',
+                                'Solicitud Aprobada - Credenciales ParkeaYa',
                                 f'Hola {solicitud.nombre},\n\n'
                                 f'¡Felicidades! Tu solicitud para "{solicitud.empresa}" ha sido APROBADA.\n\n'
                                 f'Tus credenciales de acceso son:\n'
@@ -554,7 +554,7 @@ def revisar_solicitud_owner(request, solicitud_id):
                                 f'Contraseña: {password}\n\n'
                                 f'Puedes acceder a tu panel owner en: {settings.FRONTEND_URL}/owner/login\n\n'
                                 f'Te recomendamos cambiar tu contraseña después del primer acceso.\n\n'
-                                f'Bienvenido a ParkEA!',
+                                f'Bienvenido a ParkeaYa!',
                                 from_email,
                                 [solicitud.email],
                                 fail_silently=False,
@@ -607,7 +607,7 @@ def revisar_solicitud_owner(request, solicitud_id):
                             f'Lamentamos informarte que tu solicitud para "{solicitud.empresa}" ha sido RECHAZADA.\n\n'
                             f'Motivo: {comentarios}\n\n'
                             f'Si tienes alguna pregunta, por favor contacta con nuestro soporte.\n\n'
-                            f'Saludos,\nEquipo ParkEA',
+                            f'Saludos,\nEquipo ParkeaYa',
                             from_email,
                             [solicitud.email],
                             fail_silently=True,
@@ -669,7 +669,7 @@ def change_password(request):
     new_password = request.data.get('new_password')
     confirm_password = request.data.get('confirm_password')
     
-    print(f"🔐 [CAMBIAR CONTRASEÑA] Usuario: {user.username}")
+    print(f" [CAMBIAR CONTRASEÑA] Usuario: {user.username}")
     
     if not all([old_password, new_password]):
         return Response(
@@ -686,7 +686,7 @@ def change_password(request):
     
     # Verificar contraseña actual
     if not user.check_password(old_password):
-        print("❌ [CAMBIAR CONTRASEÑA] Contraseña actual incorrecta")
+        print(" [CAMBIAR CONTRASEÑA] Contraseña actual incorrecta")
         return Response(
             {'error': 'Contraseña actual incorrecta'}, 
             status=status.HTTP_400_BAD_REQUEST
@@ -703,7 +703,7 @@ def change_password(request):
     user.set_password(new_password)
     user.save()
     
-    print("✅ [CAMBIAR CONTRASEÑA] Contraseña actualizada exitosamente")
+    print(" [CAMBIAR CONTRASEÑA] Contraseña actualizada exitosamente")
     
     return Response({'message': 'Contraseña actualizada correctamente'})
 

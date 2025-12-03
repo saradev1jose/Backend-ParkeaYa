@@ -80,6 +80,9 @@ urlpatterns = [
     
     # Complaints app
     path('api/complaints/', include('complaints.urls')),
+
+    # Terms content (base64 encoded HTML)
+    path('api/terms/', include('terms.urls')),
     
     # Legacy endpoints que pueden estar en uso
     path('api/dashboard/stats/', include('parking.urls')),  
