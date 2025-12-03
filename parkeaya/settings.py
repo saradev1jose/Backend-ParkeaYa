@@ -197,6 +197,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://10.0.2.2:8000",
     "http://10.0.2.2",
     "http://10.0.2.2:3000",
+    "https://panelgeneral-ij86.onrender.com",
     # Agregar aquí tu dominio de frontend en producción
 ]
 
