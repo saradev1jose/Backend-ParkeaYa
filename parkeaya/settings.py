@@ -1,6 +1,12 @@
 from pathlib import Path
 from datetime import timedelta
 
+import dj_database_url
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = 'django-insecure-zya-n4$e(vxg)(i4bsk*7+o2egqusps6=25o-$ge2ek@pyead&'
@@ -123,14 +129,11 @@ TEMPLATES = [
 WSGI_APPLICATION = 'parkeaya.wsgi.application'
 
 DATABASES = {
-    'default': {
-       'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'parkeaya_db',
-        'USER': 'postgres',
-        'PASSWORD': '1234',
-        'HOST': 'localhost',
-        'PORT': '5432',
-    }
+    'default': dj_database_url.config(
+        default=os.getenv("DATABASE_URL"),
+        conn_max_age=600,
+        ssl_require=True
+    )
 }
 
 AUTH_PASSWORD_VALIDATORS = [
