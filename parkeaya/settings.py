@@ -11,7 +11,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = 'django-insecure-zya-n4$e(vxg)(i4bsk*7+o2egqusps6=25o-$ge2ek@pyead&'
 DEBUG = True
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '10.0.2.2', '0.0.0.0', '192.168.1.*']
+# Corregido: Agregar el dominio de Render a ALLOWED_HOSTS
+ALLOWED_HOSTS = [
+    '127.0.0.1', 
+    'localhost', 
+    '10.0.2.2', 
+    '0.0.0.0',
+    '192.168.1.*',
+    'backend-parkeaya.onrender.com',  # ← Agregado
+    '*',  # ← Para desarrollo, pero en producción sería mejor especificar
+]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -94,12 +103,10 @@ REST_FRAMEWORK = {
     ],
 }
 
-
-
-
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # ← Agregado para servir archivos estáticos en Render
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -114,7 +121,7 @@ ROOT_URLCONF = 'parkeaya.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],  # ← Agregado directorio de templates
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -128,13 +135,24 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'parkeaya.wsgi.application'
 
-DATABASES = {
-    'default': dj_database_url.config(
-        default=os.getenv("DATABASE_URL"),
-        conn_max_age=600,
-        ssl_require=True
-    )
-}
+# Configuración de base de datos con fallback para desarrollo
+DATABASE_URL = os.getenv("DATABASE_URL")
+if DATABASE_URL:
+    DATABASES = {
+        'default': dj_database_url.config(
+            default=DATABASE_URL,
+            conn_max_age=600,
+            ssl_require=True
+        )
+    }
+else:
+    # Configuración de desarrollo local
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',},
@@ -143,23 +161,29 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',},
 ]
 
-LANGUAGE_CODE = 'en-us'
-TIME_ZONE = 'UTC'
+LANGUAGE_CODE = 'es-pe'  # ← Cambiado a español de Perú
+TIME_ZONE = 'America/Lima'  # ← Cambiado a zona horaria de Lima
 USE_I18N = True
 USE_TZ = True
 
+# Configuración de archivos estáticos para Render
 STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+# Archivos multimedia
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
 AUTH_USER_MODEL = 'users.User'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # =============================================================================
-# CONFIGURACIÓN CORS Y CSRF PARA DESARROLLO
+# CONFIGURACIÓN CORS Y CSRF PARA DESARROLLO Y PRODUCCIÓN
 # =============================================================================
 
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = DEBUG  # Solo permitir todos en desarrollo
 CORS_ALLOW_CREDENTIALS = True
 
 CORS_ALLOWED_ORIGINS = [
@@ -173,6 +197,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://10.0.2.2:8000",
     "http://10.0.2.2",
     "http://10.0.2.2:3000",
+    # Agregar aquí tu dominio de frontend en producción
 ]
 
 CORS_ALLOW_METHODS = [
@@ -192,44 +217,95 @@ CSRF_TRUSTED_ORIGINS = [
     "http://127.0.0.1:8081",
     "http://10.0.2.2:8000",
     "http://10.0.2.2",
+    "https://backend-parkeaya.onrender.com",  # ← Agregado para Render
 ]
 
-CSRF_COOKIE_SECURE = False
-SESSION_COOKIE_SECURE = False
+CSRF_COOKIE_SECURE = not DEBUG  # Solo seguro en producción
+SESSION_COOKIE_SECURE = not DEBUG  # Solo seguro en producción
 
+# Configuración de autenticación
 REST_AUTH = {
     'USE_JWT': True,
     'JWT_AUTH_COOKIE': 'jwt-auth',
     'JWT_AUTH_REFRESH_COOKIE': 'jwt-refresh',
+    'JWT_AUTH_HTTPONLY': False,
 }
 
+# Configuración de caché
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
+        'LOCATION': 'unique-snowflake',
     }
 }
 
-# Configuración adicional para desarrollo
+# Configuración para desarrollo
 APPEND_SLASH = True
 
-# Logging para debug
+# Configuración de logging
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
     'handlers': {
         'console': {
+            'level': 'DEBUG' if DEBUG else 'INFO',
             'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+        'file': {
+            'level': 'WARNING',
+            'class': 'logging.FileHandler',
+            'filename': BASE_DIR / 'debug.log',
+            'formatter': 'verbose',
         },
     },
     'root': {
         'handlers': ['console'],
-        'level': 'INFO',
+        'level': 'DEBUG' if DEBUG else 'INFO',
     },
     'loggers': {
         'django': {
-            'handlers': ['console'],
+            'handlers': ['console', 'file'],
             'level': 'INFO',
+            'propagate': True,
+        },
+        'django.request': {
+            'handlers': ['console', 'file'],
+            'level': 'ERROR',
             'propagate': False,
+        },
+        'parkeaya': {
+            'handlers': ['console', 'file'],
+            'level': 'DEBUG' if DEBUG else 'INFO',
+            'propagate': True,
         },
     },
 }
+
+# Configuración adicional para Celery (si lo usas)
+# CELERY_BROKER_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+# CELERY_RESULT_BACKEND = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+# CELERY_ACCEPT_CONTENT = ['json']
+# CELERY_TASK_SERIALIZER = 'json'
+# CELERY_RESULT_SERIALIZER = 'json'
+# CELERY_TIMEZONE = TIME_ZONE
+
+# Configuración de seguridad en producción
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SECURE_HSTS_SECONDS = 31536000  # 1 año
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_BROWSER_XSS_FILTER = True
+    X_FRAME_OPTIONS = 'DENY'
